@@ -910,15 +910,16 @@ async function initApp() {
   const supBar=document.getElementById('sup-bar');
   supBar.style.display=isPriv?'':'none';
   if(isPriv){
-    const sel=document.getElementById('sup-vendor-sel');
-    sel.innerHTML='<option value="">Book as: Own Account</option>';
-    VENDORS_MASTER.forEach(v=>{ const o=document.createElement('option');o.value=v.id;o.textContent=`${v.id} — ${v.name.slice(0,40)}`;sel.appendChild(o); });
+    // Initially populate with hardcoded list — will be replaced with live data below
+    populateSupVendorDropdown(VENDORS_MASTER);
   }
   // Load live vendor list from Google Sheets immediately
   const vndRes = await api('getVendors');
   if (vndRes.ok && vndRes.data.length) {
     S.vendorList = vndRes.data;
     populateSuVendors(); // refresh signup dropdown with live vendors
+    // Also update supervisor "book on behalf" dropdown with live vendor list
+    if (isPriv) populateSupVendorDropdown(S.vendorList);
   }
 
   // API status
@@ -992,15 +993,7 @@ async function syncAllData() {
 
     // 6. Refresh supervisor vendor selector
     if (['admin','supervisor'].includes(S.user.role)) {
-      const sel = document.getElementById('sup-vendor-sel');
-      const prev = sel.value;
-      sel.innerHTML = '<option value="">Book as: Own Account</option>';
-      (S.vendorList.length ? S.vendorList : VENDORS_MASTER).forEach(v => {
-        const o = document.createElement('option');
-        o.value = v.id; o.textContent = `${v.id} — ${v.name.slice(0,40)}`;
-        sel.appendChild(o);
-      });
-      sel.value = prev;
+      populateSupVendorDropdown(S.vendorList.length ? S.vendorList : VENDORS_MASTER);
     }
 
     toast('✅ Data synced from Google Sheets', 'success');
@@ -1025,6 +1018,22 @@ function navTo(p) {
   if(p==='vendors') loadVendors();
   if(p==='reports') loadReports();
   if(p==='config') renderConfig();
+}
+
+// Shared helper — populates the supervisor "book on behalf" dropdown
+function populateSupVendorDropdown(vendors) {
+  const sel = document.getElementById('sup-vendor-sel');
+  const prev = sel.value; // remember current selection
+  sel.innerHTML = '<option value="">Book as: Own Account</option>';
+  vendors.forEach(v => {
+    const id   = v.id || v.vendorId || '';
+    const name = v.name || v.vendorName || '';
+    const o = document.createElement('option');
+    o.value = id;
+    o.textContent = `${id} — ${name.slice(0, 45)}`;
+    sel.appendChild(o);
+  });
+  if (prev) sel.value = prev; // restore selection if still in list
 }
 
 function supVendorChange() {
@@ -1158,11 +1167,12 @@ async function syncFromSheets() {
       S.cfg = cfgR.data;
       renderWHFilter && renderWHFilter();
     }
-    // Reload vendors for signup dropdown
+    // Reload vendors — update both signup dropdown and supervisor selector
     const vndR = await api('getVendors');
-    if (vndR.ok) {
-      // Update vendor master cache used in dropdowns
-      window._liveVendors = vndR.data;
+    if (vndR.ok && vndR.data.length) {
+      S.vendorList = vndR.data;
+      await populateSuVendors();
+      if (['admin','supervisor'].includes(S.user.role)) populateSupVendorDropdown(S.vendorList);
     }
     // Reload bookings
     const bkR = await api('getBookings', {});
@@ -1233,7 +1243,10 @@ function renderPOList(search) {
     const isS=sel.find(x=>x.po===p.po);
     return `<div class="poi${isS?' sel':''}" onclick="togglePO('${p.po}','${p.wh||p.warehouse}',${p.lines})">
       <input type="checkbox" ${isS?'checked':''} onclick="event.stopPropagation();togglePO('${p.po}','${p.wh||p.warehouse}',${p.lines})">
-      <div class="poi-d"><div class="poi-po">${p.po}</div><div class="poi-meta">${p.lines} line${p.lines>1?'s':''}</div></div>
+      <div class="poi-d">
+        <div class="poi-po">${p.po}</div>
+        <div class="poi-meta">${p.vendorName||p.vendorId||''} &nbsp;·&nbsp; ${p.lines} line${p.lines>1?'s':''}</div>
+      </div>
       <div class="poi-wh">${p.wh||p.warehouse}</div>
     </div>`;
   }).join('');
