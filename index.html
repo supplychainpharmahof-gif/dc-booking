@@ -229,9 +229,9 @@ table.dt{width:100%;border-collapse:collapse}
      CONFIG — PASTE YOUR GOOGLE APPS SCRIPT URL HERE
 ════════════════════════════════════════════════════════ -->
 <script>
-const API_URL = 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE';
-// Example: 'https://script.google.com/macros/s/AKfy.../exec'
-// Leave as-is to use demo mode (localStorage only)
+// API URL — reads from localStorage so admin can set it from Config page
+const _SAVED_URL = localStorage.getItem('dc_api_url') || '';
+const API_URL = _SAVED_URL || 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE';
 const DEMO_MODE = !API_URL || API_URL.includes('YOUR_GOOGLE');
 </script>
 <!-- ═══════════════════════════════════════════════════════ -->
@@ -670,16 +670,20 @@ const DEMO_MODE = !API_URL || API_URL.includes('YOUR_GOOGLE');
 async function api(action, data={}) {
   if (DEMO_MODE) return demoApi(action, data);
   try {
+    // Apps Script works best with GET — encode payload as URL param
     const url = new URL(API_URL);
     url.searchParams.set('action', action);
-    const res = await fetch(url, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({action,...data})
-    });
-    return await res.json();
+    if (Object.keys(data).length > 0) {
+      url.searchParams.set('payload', JSON.stringify(data));
+    }
+    const res = await fetch(url.toString(), { method: 'GET' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch(e2) { console.error('Parse error:', text.slice(0,300)); return {ok:false, error:'Invalid server response'}; }
   } catch(e) {
     console.error('API error:', e);
-    return { ok:false, error: 'Connection failed. Running in demo mode.' };
+    return { ok:false, error: 'Connection failed: ' + e.message };
   }
 }
 
@@ -796,6 +800,7 @@ let S = {
   allBookings: [],
   myBookings: [],
   openPOs: [],
+  liveBookings: null,     // cache of bookings from API for current date grid
   addDockToWH: null,
 };
 
@@ -912,7 +917,7 @@ function navTo(p) {
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.toggle('on',b.dataset.p===p));
   document.getElementById(`pg-${p}`).classList.add('on');
-  if(p==='booking') { resetToWHStep(); }
+  if(p==='booking') { S.liveBookings=null; resetToWHStep(); }
   if(p==='mybookings') loadMyBookings();
   if(p==='allbookings') loadAllBookings();
   if(p==='vendors') loadVendors();
@@ -942,7 +947,7 @@ function renderWHCards() {
   document.getElementById('wh-cards').innerHTML=whs.map(wh=>{
     // Count available slots today
     const docks=wh.docks, today=fmtDate(S.selectedDate);
-    const booked=DEMO.bookings.filter(b=>b.date===today&&b.warehouse===wh.id&&b.status!=='cancelled').length;
+    const booked=getActiveBookings().filter(b=>b.date===today&&b.warehouse===wh.id).length;
     const total=docks.length*(S.cfg.timeWindows||[]).length;
     const free=total-booked;
     const pct=total?Math.round(booked/total*100):0;
@@ -958,7 +963,7 @@ function renderWHCards() {
   }).join('');
 }
 
-function selectWH(whId) {
+async function selectWH(whId) {
   S.selectedWH=S.cfg.warehouses.find(w=>w.id===whId);
   document.getElementById('bk-step1').style.display='none';
   document.getElementById('bk-step2').style.display='';
@@ -966,6 +971,7 @@ function selectWH(whId) {
   S.selectedDate=new Date();
   document.getElementById('dt-label').textContent=fmtDateDisp(S.selectedDate);
   document.getElementById('dt-pick').value=fmtDate(S.selectedDate);
+  await refreshLiveBookings();
   renderDockGrid();
 }
 function backToWH() { resetToWHStep(); }
@@ -998,7 +1004,7 @@ function renderDockGrid() {
   times.forEach(([st,et])=>{
     html+=`<tr><td class="tc">${st}</td>`;
     docks.forEach(d=>{
-      const bk=DEMO.bookings.find(b=>b.date===dateStr&&b.warehouse===wh.id&&b.dock===d&&b.startTime===st&&b.status!=='cancelled');
+      const bk=getActiveBookings().find(b=>b.date===dateStr&&b.warehouse===wh.id&&b.dock===d&&b.startTime===st);
       const sp=cfg.specialDocks.find(s=>s.wh===wh.id&&s.dock===d);
       if(holiday){
         html+=`<td><div class="dc hol">🎌 ${holiday.name}</div></td>`;
@@ -1028,9 +1034,20 @@ function renderDockGrid() {
     <div style="font-size:11px;color:var(--tx2);margin-top:4px">${pct}% occupied</div>`;
 }
 
-function chDate(d) { S.selectedDate=new Date(S.selectedDate.getTime()+d*86400000); document.getElementById('dt-label').textContent=fmtDateDisp(S.selectedDate); document.getElementById('dt-pick').value=fmtDate(S.selectedDate); renderDockGrid(); }
-function dtPickChange() { const v=document.getElementById('dt-pick').value; if(v){S.selectedDate=new Date(v+'T12:00:00');document.getElementById('dt-label').textContent=fmtDateDisp(S.selectedDate);renderDockGrid();} }
-function refreshGrid() { renderDockGrid(); toast('Grid refreshed','info'); }
+async function chDate(d) { S.selectedDate=new Date(S.selectedDate.getTime()+d*86400000); document.getElementById('dt-label').textContent=fmtDateDisp(S.selectedDate); document.getElementById('dt-pick').value=fmtDate(S.selectedDate); await refreshLiveBookings(); renderDockGrid(); }
+async function dtPickChange() { const v=document.getElementById('dt-pick').value; if(v){S.selectedDate=new Date(v+'T12:00:00');document.getElementById('dt-label').textContent=fmtDateDisp(S.selectedDate); await refreshLiveBookings(); renderDockGrid();} }
+async function refreshGrid() { await refreshLiveBookings(); renderDockGrid(); toast('Grid refreshed','info'); }
+
+// Load bookings from API (or fallback to DEMO) into S.liveBookings
+async function refreshLiveBookings() {
+  const r = await api('getBookings', {});
+  S.liveBookings = r.ok ? r.data : DEMO.bookings;
+}
+
+// Get active bookings for rendering — from liveBookings cache or DEMO fallback
+function getActiveBookings() {
+  return (S.liveBookings !== null ? S.liveBookings : DEMO.bookings).filter(b => b.status !== 'cancelled');
+}
 
 // ═══════════════════════════════════════════════════════════
 // BOOKING — STEP 3 & 4: PO + DETAILS
@@ -1040,7 +1057,7 @@ async function startBooking(dock, st, et) {
   if(!vid){toast('Select a vendor to book on behalf of, or log in as a vendor.','error');return;}
   // Max bookings per day check (vendor only)
   if(S.user.role==='vendor'){
-    const cnt=DEMO.bookings.filter(b=>b.date===fmtDate(S.selectedDate)&&b.vendorId===vid&&b.status!=='cancelled').length;
+    const cnt=getActiveBookings().filter(b=>b.date===fmtDate(S.selectedDate)&&b.vendorId===vid).length;
     if(cnt>=S.cfg.maxBookingsPerDay){toast(`Max ${S.cfg.maxBookingsPerDay} bookings per day reached.`,'error');return;}
   }
   S.bkCtx={dock,date:fmtDate(S.selectedDate),startTime:st,endTime:et,selectedPOs:[],warehouse:S.selectedWH.id,step:3};
@@ -1135,6 +1152,9 @@ async function submitBooking() {
   const r=await api('createBooking',booking);
   btn.disabled=false; btn.textContent='✓ Confirm Booking';
   if(!r.ok){toast(r.error,'error');return;}
+  // Update local cache immediately so grid reflects new booking without another API call
+  const newBk={...booking, id:r.bookingId, createdAt:nowStr(), status:'confirmed'};
+  if(S.liveBookings) S.liveBookings.push(newBk); else DEMO.bookings.push(newBk);
   closeOv('ov-booking');
   document.getElementById('done-id').textContent=r.bookingId;
   document.getElementById('done-note').textContent=booking.notify?`Confirmation sent to ${booking.email}`:'Email notification disabled.';
@@ -1149,7 +1169,8 @@ function continueBooking() { closeOv('ov-done'); renderDockGrid(); }
 // VIEW / EDIT BOOKING
 // ═══════════════════════════════════════════════════════════
 function viewBooking(id) {
-  const b=DEMO.bookings.find(x=>x.id===id)||null; if(!b) return;
+  const allBk = S.liveBookings !== null ? S.liveBookings : DEMO.bookings;
+  const b=allBk.find(x=>x.id===id)||null; if(!b) return;
   const canEdit=['admin','supervisor'].includes(S.user.role)||b.vendorId===S.user.vendorId;
   document.getElementById('vb-title').textContent=`Booking: ${b.id}`;
   document.getElementById('vb-body').innerHTML=`
@@ -1180,11 +1201,15 @@ function viewBooking(id) {
 async function cancelBooking(id) {
   if(!confirm('Cancel this booking?')) return;
   const r=await api('cancelBooking',{bookingId:id}); if(!r.ok){toast(r.error,'error');return;}
+  // Update local cache
+  const allBkc = S.liveBookings !== null ? S.liveBookings : DEMO.bookings;
+  const ci = allBkc.findIndex(b=>b.id===id); if(ci>=0) allBkc[ci].status='cancelled';
   closeOv('ov-view'); renderDockGrid(); loadMyBookings(); toast('Booking cancelled.','info');
 }
 
 async function editRemark(id) {
-  const b=DEMO.bookings.find(x=>x.id===id)||{remark:''};
+  const allBk2 = S.liveBookings !== null ? S.liveBookings : DEMO.bookings;
+  const b=allBk2.find(x=>x.id===id)||{remark:''};
   const r=prompt('Edit remark:',b.remark||''); if(r===null) return;
   const res=await api('updateBooking',{bookingId:id,remark:r}); if(!res.ok){toast(res.error,'error');return;}
   viewBooking(id); toast('Remark updated.','success');
@@ -1194,9 +1219,13 @@ async function editRemark(id) {
 // MY BOOKINGS
 // ═══════════════════════════════════════════════════════════
 async function loadMyBookings(filter='') {
+  // Use liveBookings cache if available, otherwise fetch
+  if (S.liveBookings === null) {
+    const r=await api('getBookings',{});
+    S.liveBookings=r.ok?r.data:DEMO.bookings;
+  }
   const vid=S.user.role==='vendor'?S.user.vendorId:null;
-  const r=await api('getBookings',vid?{vendorId:vid}:{});
-  S.myBookings=r.ok?r.data:[];
+  S.myBookings = vid ? S.liveBookings.filter(b=>b.vendorId===vid) : S.liveBookings;
   renderMyBkTable(filter);
 }
 function renderMyBkTable(filter='') {
@@ -1221,8 +1250,9 @@ function exportMyBk() { exportCSV(S.myBookings,'my_bookings'); }
 // ALL BOOKINGS
 // ═══════════════════════════════════════════════════════════
 async function loadAllBookings(from='',to='') {
+  // Always fetch fresh for all-bookings view
   const r=await api('getBookings',{dateFrom:from,dateTo:to});
-  S.allBookings=r.ok?r.data:[];
+  if(r.ok){ S.allBookings=r.data; S.liveBookings=r.data; } else { S.allBookings=DEMO.bookings; }
   const el=document.getElementById('all-bk-tbl');
   if(!S.allBookings.length){el.innerHTML='<div class="empty"><div class="empty-ico">📭</div><p>No bookings</p></div>';return;}
   el.innerHTML=`<table class="dt"><thead><tr><th>Booking ID</th><th>Created</th><th>Vendor</th><th>Date / Time</th><th>Dock</th><th>WH</th><th>POs</th><th>Truck</th><th>Status</th><th>Booked By</th><th></th></tr></thead><tbody>
@@ -1268,7 +1298,8 @@ function filterVendors(v) { renderVendorTable(v.toLowerCase()); }
 // ═══════════════════════════════════════════════════════════
 async function loadReports() {
   const r=await api('getBookings',{});
-  const bks=(r.ok?r.data:[]).filter(b=>b.status==='confirmed');
+  if(r.ok) { S.liveBookings=r.data; }
+  const bks=(r.ok?r.data:DEMO.bookings).filter(b=>b.status==='confirmed');
   const today=fmtDate(new Date()), in7=fmtDate(new Date(Date.now()+7*864e5));
   const mo=today.slice(0,7);
   document.getElementById('st-month').textContent=bks.filter(b=>b.date.startsWith(mo)).length;
@@ -1399,7 +1430,7 @@ function exportDisplay() {
   const rows=[['Date','Time',...wh.docks]];
   S.cfg.timeWindows.forEach(([st])=>{
     const row=[dateStr,st];
-    wh.docks.forEach(d=>{ const b=DEMO.bookings.find(x=>x.date===dateStr&&x.warehouse===wh.id&&x.dock===d&&x.startTime===st&&x.status!=='cancelled'); row.push(b?b.vendorId:''); });
+    wh.docks.forEach(d=>{ const b=getActiveBookings().find(x=>x.date===dateStr&&x.warehouse===wh.id&&x.dock===d&&x.startTime===st); row.push(b?b.vendorId:''); });
     rows.push(row);
   });
   dlFile(rows.map(r=>r.join(',')).join('\n'),'text/csv',`BookingDisplay_${wh.id}_${dateStr}.csv`);
@@ -1421,8 +1452,7 @@ function toast(msg, type='info') {
   document.getElementById('toast').appendChild(el); setTimeout(()=>el.remove(),3500);
 }
 
-// Override API URL from localStorage if set
-(()=>{ const saved=localStorage.getItem('dc_api_url'); if(saved&&saved!==API_URL) { window.API_URL_OVERRIDE=saved; } })();
+// API URL is now loaded from localStorage at the top of the script
 
 // Close modals on overlay click
 document.querySelectorAll('.ov').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('on');}));
