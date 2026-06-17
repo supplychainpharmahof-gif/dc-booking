@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -232,7 +231,7 @@ table.dt{width:100%;border-collapse:collapse}
 <script>
 // API URL — reads from localStorage so admin can set it from Config page
 const _SAVED_URL = localStorage.getItem('dc_api_url') || '';
-const API_URL = _SAVED_URL || 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL_HERE';
+const API_URL = _SAVED_URL || 'https://script.google.com/macros/s/AKfycbyJR-e1vJp1SSuEGlP03Mao-pzRHwXZlJLPS0SekJ0tnBQYMfJsefPfvcK02EAy2LjD/exec';
 const DEMO_MODE = !API_URL || API_URL.includes('YOUR_GOOGLE');
 </script>
 <!-- ═══════════════════════════════════════════════════════ -->
@@ -255,9 +254,12 @@ const DEMO_MODE = !API_URL || API_URL.includes('YOUR_GOOGLE');
       <div class="fg"><label>Email</label><input id="li-email" type="email" placeholder="your@email.com"></div>
       <div class="fg"><label>Password</label><input id="li-pw" type="password" placeholder="••••••••"></div>
       <div id="li-err" class="alert a-error" style="display:none"></div>
-      <div id="demo-note" class="alert a-info" style="font-size:12px">
+      <div id="demo-note" class="alert a-info" style="font-size:12px;display:none">
         <div><strong>Demo mode (localStorage)</strong><br>
         admin@dc.com / admin123 &nbsp;·&nbsp; sup@dc.com / sup123 &nbsp;·&nbsp; vendor@dc.com / v123</div>
+      </div>
+      <div id="api-note" class="alert a-success" style="font-size:12px;display:none">
+        <div>✅ <strong>Connected to Google Sheets</strong> — sign in with your registered account</div>
       </div>
       <button class="btn btn-primary btn-full" id="li-btn" onclick="doLogin()">Sign In →</button>
     </div>
@@ -302,6 +304,7 @@ const DEMO_MODE = !API_URL || API_URL.includes('YOUR_GOOGLE');
         <div style="font-weight:600" id="hd-name">Admin</div>
         <span class="role-badge rb-admin" id="hd-role">admin</span>
       </div>
+      <button class="btn btn-ghost btn-sm" id="sync-btn" onclick="syncAllData()" title="Reload all data from Google Sheets">↺ Sync</button>
       <button class="btn btn-ghost btn-sm" onclick="doLogout()">Sign Out</button>
     </div>
   </header>
@@ -313,8 +316,9 @@ const DEMO_MODE = !API_URL || API_URL.includes('YOUR_GOOGLE');
       <div class="ph">
         <div><div class="pt">📅 Dock Booking</div><div class="ps">Select a warehouse, then click an available slot to book</div></div>
         <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="syncFromSheets()">🔄 Sync Sheets</button>
           <button class="btn btn-ghost btn-sm" onclick="exportDisplay()">⬇️ Export Display</button>
-          <button class="btn btn-ghost btn-sm" onclick="refreshGrid()">↺ Refresh</button>
+          <button class="btn btn-ghost btn-sm" onclick="refreshGrid()">↺ Refresh Grid</button>
         </div>
       </div>
 
@@ -802,6 +806,7 @@ let S = {
   myBookings: [],
   openPOs: [],
   liveBookings: null,     // cache of bookings from API for current date grid
+  vendorList: [],         // cache of vendors from Google Sheet
   addDockToWH: null,
 };
 
@@ -829,10 +834,21 @@ function authTab(t) {
   if(t==='signup') populateSuVendors();
 }
 
-function populateSuVendors() {
+async function populateSuVendors() {
   const sel=document.getElementById('su-vid');
+  sel.innerHTML='<option value="">— loading vendors... —</option>';
+  const r = await api('getVendors');
+  const vendors = (r.ok && r.data && r.data.length > 0) ? r.data : VENDORS_MASTER;
+  if (r.ok && r.data) { S.vendorList = r.data; }
   sel.innerHTML='<option value="">— select your vendor ID —</option>';
-  VENDORS_MASTER.forEach(v=>{ const o=document.createElement('option'); o.value=v.id; o.textContent=`${v.id} — ${v.name.slice(0,50)}`; sel.appendChild(o); });
+  vendors.forEach(v=>{ 
+    const id = v.id || v.vendorId || '';
+    const name = v.name || v.vendorName || '';
+    const o=document.createElement('option'); 
+    o.value=id; 
+    o.textContent=`${id} — ${name.slice(0,50)}`; 
+    sel.appendChild(o); 
+  });
 }
 function onVendorSelect() {
   const v=VENDORS_MASTER.find(x=>x.id===document.getElementById('su-vid').value);
@@ -898,6 +914,13 @@ async function initApp() {
     sel.innerHTML='<option value="">Book as: Own Account</option>';
     VENDORS_MASTER.forEach(v=>{ const o=document.createElement('option');o.value=v.id;o.textContent=`${v.id} — ${v.name.slice(0,40)}`;sel.appendChild(o); });
   }
+  // Load live vendor list from Google Sheets immediately
+  const vndRes = await api('getVendors');
+  if (vndRes.ok && vndRes.data.length) {
+    S.vendorList = vndRes.data;
+    populateSuVendors(); // refresh signup dropdown with live vendors
+  }
+
   // API status
   await checkApiStatus();
   navTo('booking');
@@ -905,10 +928,88 @@ async function initApp() {
 
 async function checkApiStatus() {
   const el=document.getElementById('api-status-text');
-  if(DEMO_MODE){el.textContent='⚠️ Demo mode (localStorage). Connect Google Sheets to go live.';return;}
+  if(DEMO_MODE){
+    el.textContent='⚠️ Demo mode (localStorage). Connect Google Sheets to go live.';
+    document.getElementById('api-status').className='api-cfg a-warn';
+    return;
+  }
   const r=await api('ping');
-  el.textContent=r.ok?`✅ Connected — ${r.msg}`:`❌ Error: ${r.error}`;
-  document.getElementById('api-status').className=r.ok?'api-cfg a-success':'api-cfg a-error';
+  if(r.ok){
+    el.textContent=`✅ Connected — ${r.msg} (${r.time||''})`;
+    document.getElementById('api-status').className='api-cfg a-success';
+  } else {
+    el.textContent=`❌ Connection error: ${r.error}`;
+    document.getElementById('api-status').className='api-cfg a-error';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// SYNC — reload everything from Google Sheets
+// ═══════════════════════════════════════════════════════════
+async function syncAllData() {
+  const btn = document.getElementById('sync-btn');
+  btn.textContent = '⏳ Syncing...';
+  btn.disabled = true;
+
+  try {
+    // 1. Reload config (warehouses, docks, time windows, etc.)
+    const cfgRes = await api('getConfig');
+    if (cfgRes.ok) {
+      S.cfg = cfgRes.data;
+      renderWHCards();
+      if (S.selectedWH) {
+        // Re-validate selected WH still exists
+        S.selectedWH = S.cfg.warehouses.find(w => w.id === S.selectedWH.id) || null;
+      }
+    }
+
+    // 2. Reload all bookings
+    const bkRes = await api('getBookings', {});
+    if (bkRes.ok) S.liveBookings = bkRes.data;
+
+    // 3. Reload vendors
+    const vndRes = await api('getVendors');
+    if (vndRes.ok) S.vendorList = vndRes.data;
+
+    // 4. Reload vendor list for signup dropdown
+    populateSuVendors();
+
+    // 5. Re-render current page
+    const activePage = document.querySelector('.nb.on')?.dataset?.p;
+    if (activePage === 'booking') {
+      if (S.selectedWH) renderDockGrid(); else renderWHCards();
+    } else if (activePage === 'mybookings') {
+      loadMyBookings();
+    } else if (activePage === 'allbookings') {
+      loadAllBookings();
+    } else if (activePage === 'vendors') {
+      renderVendorTableFromCache();
+    } else if (activePage === 'reports') {
+      loadReports();
+    } else if (activePage === 'config') {
+      renderConfig();
+    }
+
+    // 6. Refresh supervisor vendor selector
+    if (['admin','supervisor'].includes(S.user.role)) {
+      const sel = document.getElementById('sup-vendor-sel');
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">Book as: Own Account</option>';
+      (S.vendorList.length ? S.vendorList : VENDORS_MASTER).forEach(v => {
+        const o = document.createElement('option');
+        o.value = v.id; o.textContent = `${v.id} — ${v.name.slice(0,40)}`;
+        sel.appendChild(o);
+      });
+      sel.value = prev;
+    }
+
+    toast('✅ Data synced from Google Sheets', 'success');
+  } catch(e) {
+    toast('Sync failed: ' + e.message, 'error');
+  }
+
+  btn.textContent = '↺ Sync';
+  btn.disabled = false;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -918,7 +1019,7 @@ function navTo(p) {
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.toggle('on',b.dataset.p===p));
   document.getElementById(`pg-${p}`).classList.add('on');
-  if(p==='booking') { S.liveBookings=null; resetToWHStep(); }
+  if(p==='booking') { S.liveBookings=null; S.cfg && resetToWHStep(); }
   if(p==='mybookings') loadMyBookings();
   if(p==='allbookings') loadAllBookings();
   if(p==='vendors') loadVendors();
@@ -1045,6 +1146,38 @@ async function refreshLiveBookings() {
   S.liveBookings = r.ok ? r.data : DEMO.bookings;
 }
 
+// Full sync — reloads everything from Google Sheets
+async function syncFromSheets() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '⏳ Syncing...';
+  try {
+    // Reload config
+    const cfgR = await api('getConfig');
+    if (cfgR.ok) {
+      S.cfg = cfgR.data;
+      renderWHFilter && renderWHFilter();
+    }
+    // Reload vendors for signup dropdown
+    const vndR = await api('getVendors');
+    if (vndR.ok) {
+      // Update vendor master cache used in dropdowns
+      window._liveVendors = vndR.data;
+    }
+    // Reload bookings
+    const bkR = await api('getBookings', {});
+    if (bkR.ok) S.liveBookings = bkR.data;
+    // Re-render current view
+    if (S.selectedWH) renderDockGrid();
+    else renderWHCards();
+    toast('✅ Synced from Google Sheets successfully!', 'success');
+  } catch(e) {
+    toast('Sync failed: ' + e.message, 'error');
+  }
+  btn.disabled = false;
+  btn.textContent = '🔄 Sync Sheets';
+}
+
 // Get active bookings for rendering — from liveBookings cache or DEMO fallback
 function getActiveBookings() {
   return (S.liveBookings !== null ? S.liveBookings : DEMO.bookings).filter(b => b.status !== 'cancelled');
@@ -1077,10 +1210,18 @@ async function startBooking(dock, st, et) {
 }
 
 async function loadPOs(vid) {
-  document.getElementById('po-items').innerHTML='<div class="loading" style="padding:20px"><div class="spinner"></div>Loading POs...</div>';
+  document.getElementById('po-items').innerHTML='<div class="loading" style="padding:20px"><div class="spinner"></div>Loading POs from Google Sheets...</div>';
+  // Always fetch fresh PO list from Google Sheets (never use hardcoded data)
   const r=await api('getOpenPO',{vendorId:vid});
-  const pos=r.ok?r.data.filter(p=>p.wh===S.selectedWH.id||p.wh===S.bkCtx.warehouse):[];
-  S.openPOs=pos;
+  if (!r.ok) {
+    document.getElementById('po-items').innerHTML=`<div class="empty" style="padding:24px"><div class="empty-ico">⚠️</div><p>Could not load POs: ${r.error}</p></div>`;
+    S.openPOs=[];
+    updatePOCount();
+    return;
+  }
+  // Filter to selected warehouse
+  const pos = r.data.filter(p => p.wh === S.selectedWH.id);
+  S.openPOs = pos;
   renderPOList('');
 }
 
@@ -1278,8 +1419,14 @@ function exportAllBk() { exportCSV(S.allBookings,'all_bookings'); }
 // ═══════════════════════════════════════════════════════════
 let allVendors=[];
 async function loadVendors(filter='') {
-  const r=await api('getVendors'); allVendors=r.ok?r.data:VENDORS_MASTER;
+  const r=await api('getVendors');
+  allVendors = (r.ok && r.data && r.data.length > 0) ? r.data : VENDORS_MASTER;
+  S.vendorList = allVendors;
   renderVendorTable(filter);
+}
+function renderVendorTableFromCache() {
+  allVendors = S.vendorList.length ? S.vendorList : VENDORS_MASTER;
+  renderVendorTable('');
 }
 function renderVendorTable(filter='') {
   let vnd=allVendors; if(filter) vnd=vnd.filter(v=>v.id.includes(filter)||v.name.toLowerCase().includes(filter));
@@ -1458,8 +1605,29 @@ function toast(msg, type='info') {
 // Close modals on overlay click
 document.querySelectorAll('.ov').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('on');}));
 
+// Auto-refresh bookings every 3 minutes so grid stays current
+setInterval(async () => {
+  if (!S.user || DEMO_MODE) return;
+  const r = await api('getBookings', {});
+  if (r.ok) {
+    S.liveBookings = r.data;
+    // Silently re-render grid if on booking page
+    const activePage = document.querySelector('.nb.on')?.dataset?.p;
+    if (activePage === 'booking' && S.selectedWH) renderDockGrid();
+  }
+}, 3 * 60 * 1000);
+
 // Keyboard: Escape closes modals
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') document.querySelectorAll('.ov.on').forEach(o=>o.classList.remove('on')); });
+
+// Show correct login note based on mode
+if (DEMO_MODE) {
+  document.getElementById('demo-note').style.display = '';
+  document.getElementById('api-note').style.display = 'none';
+} else {
+  document.getElementById('demo-note').style.display = 'none';
+  document.getElementById('api-note').style.display = '';
+}
 
 // Init vendor dropdown on page load
 populateSuVendors();
