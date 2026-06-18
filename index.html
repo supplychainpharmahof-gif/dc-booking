@@ -1177,20 +1177,27 @@ function renderDockGrid(){
     dates.forEach(dt=>{
       const dateStr=fmtDate(dt);const hol=cfg.holidays.find(h=>h.date===dateStr);
       const dtDayNum=new Date(dateStr+'T12:00:00').getDay();
-      const slotActiveToday=twDays.length>0?twDays.includes(dtDayNum):false;
+      // Supervisors/admins can book on any day even if slot not scheduled
+      const slotActiveToday=(twDays.length>0?twDays.includes(dtDayNum):false)||canOverride;
       docks.forEach(d=>{
+        let continue_cell=false;
         if(!slotActiveToday){html+=`<td><div class="dc past" style="opacity:.35" title="Not scheduled this day">–</div></td>`;return;}
         totalSlots++;
         const bk=getActiveBookings().find(b=>b.date===dateStr&&b.warehouse===wh.id&&b.dock===d&&b.startTime===st);
         const past=isPast(dateStr,st);
-        // Check if day is weekend closed (supervisors/admins can still book)
+        // Check if day is weekend closed (supervisors/admins can always override)
         const dayOfWeek=new Date(dateStr+'T12:00:00').getDay();
         const isSat=dayOfWeek===6,isSun=dayOfWeek===0;
         const isWeekendClosed=(isSat&&cfg.satClosed)||(isSun&&cfg.sunClosed);
         const canOverride=['admin','supervisor'].includes(S.user.role);
-        if(hol&&!canOverride){html+=`<td><div class="dc hol">🎌 ${hol.name}</div></td>`;}
-        else if(hol&&canOverride){html+=`<td><div class="dc ${bk?'busy':'free'}" onclick="${bk?`viewBooking('${bk&&bk.id}')`:`startBooking('${d}','${st}','${et}','${dateStr}')`}" title="Holiday — supervisor override"><span>🎌</span>${bk?'Booked':'Book'}</div></td>`;}
-        else if(isWeekendClosed&&!canOverride&&!bk){html+=`<td><div class="dc hol">Weekend</div></td>`;}
+        // Holiday logic
+        if(hol&&!canOverride){html+=`<td><div class="dc hol">🎌 ${hol.name}</div></td>`;continue_cell=true;}
+        else if(hol&&canOverride&&!bk){html+=`<td><div class="dc free" onclick="startBooking('${d}','${st}','${et}','${dateStr}')" title="🎌 Holiday — supervisor override">🎌 Book</div></td>`;continue_cell=true;}
+        else if(hol&&canOverride&&bk){html+=`<td><div class="dc busy" onclick="viewBooking('${bk.id}')" style="cursor:pointer" title="🎌 Holiday booking">🎌 ${bk.vendorId}</div></td>`;continue_cell=true;}
+        // Weekend closed — vendors blocked, supervisors/admins can book
+        else if(isWeekendClosed&&!canOverride&&!bk){html+=`<td><div class="dc hol" title="Weekend — closed">Weekend</div></td>`;continue_cell=true;}
+        else { continue_cell=false; }
+        if(continue_cell){ return; }
         else if(past&&!bk){html+=`<td><div class="dc past">–</div></td>`;}
         else if(bk){
           bookedSlots++;
