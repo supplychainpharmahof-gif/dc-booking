@@ -1175,48 +1175,63 @@ function renderDockGrid(){
     }
     html+=`<tr><td class="tc">${st}</td>`;
     dates.forEach(dt=>{
-      const dateStr=fmtDate(dt);const hol=cfg.holidays.find(h=>h.date===dateStr);
+      const dateStr=fmtDate(dt);
+      const hol=cfg.holidays.find(h=>h.date===dateStr);
       const dtDayNum=new Date(dateStr+'T12:00:00').getDay();
-      // Supervisors/admins can book on any day even if slot not scheduled
-      const slotActiveToday=(twDays.length>0?twDays.includes(dtDayNum):false)||canOverride;
+      const isWeekend=dtDayNum===6||dtDayNum===0;
+      const isWeekendClosed=(dtDayNum===6&&cfg.satClosed)||(dtDayNum===0&&cfg.sunClosed);
+      // Supervisor/admin can always book; vendor cannot book on closed weekends
+      const isPriv=['admin','supervisor'].includes(S.user.role);
+      const slotActiveToday=twDays.length>0?twDays.includes(dtDayNum):false;
       docks.forEach(d=>{
-        let continue_cell=false;
-        if(!slotActiveToday){html+=`<td><div class="dc past" style="opacity:.35" title="Not scheduled this day">–</div></td>`;return;}
-        totalSlots++;
         const bk=getActiveBookings().find(b=>b.date===dateStr&&b.warehouse===wh.id&&b.dock===d&&b.startTime===st);
         const past=isPast(dateStr,st);
-        // Check if day is weekend closed (supervisors/admins can always override)
-        const dayOfWeek=new Date(dateStr+'T12:00:00').getDay();
-        const isSat=dayOfWeek===6,isSun=dayOfWeek===0;
-        const isWeekendClosed=(isSat&&cfg.satClosed)||(isSun&&cfg.sunClosed);
-        const canOverride=['admin','supervisor'].includes(S.user.role);
-        // Holiday logic
-        if(hol&&!canOverride){html+=`<td><div class="dc hol">🎌 ${hol.name}</div></td>`;continue_cell=true;}
-        else if(hol&&canOverride&&!bk){html+=`<td><div class="dc free" onclick="startBooking('${d}','${st}','${et}','${dateStr}')" title="🎌 Holiday — supervisor override">🎌 Book</div></td>`;continue_cell=true;}
-        else if(hol&&canOverride&&bk){html+=`<td><div class="dc busy" onclick="viewBooking('${bk.id}')" style="cursor:pointer" title="🎌 Holiday booking">🎌 ${bk.vendorId}</div></td>`;continue_cell=true;}
-        // Weekend closed — vendors blocked, supervisors/admins can book
-        else if(isWeekendClosed&&!canOverride&&!bk){html+=`<td><div class="dc hol" title="Weekend — closed">Weekend</div></td>`;continue_cell=true;}
-        else { continue_cell=false; }
-        if(continue_cell){ return; }
-        else if(past&&!bk){html+=`<td><div class="dc past">–</div></td>`;}
-        else if(bk){
+        // ── Holiday ──────────────────────────────────────
+        if(hol){
+          if(bk){
+            bookedSlots++;
+            html+=`<td><div class="dc busy" ${isPriv?`onclick="viewBooking('${bk.id}')" style="cursor:pointer"`:''}">🎌 ${bk.vendorId}</div></td>`;
+          } else if(isPriv){
+            html+=`<td><div class="dc free" onclick="startBooking('${d}','${st}','${et}','${dateStr}')" title="Holiday — supervisor override">🎌 Book</div></td>`;
+            totalSlots++;
+          } else {
+            html+=`<td><div class="dc hol">🎌 ${hol.name}</div></td>`;
+          }
+          return;
+        }
+        // ── Weekend closed for vendors ────────────────────
+        if(isWeekendClosed&&!isPriv){
+          if(bk){
+            bookedSlots++;
+            html+=`<td><div class="dc busy"><span style="font-size:11px">${bk.vendorId}</span></div></td>`;
+          } else {
+            html+=`<td><div class="dc hol">Weekend</div></td>`;
+          }
+          return;
+        }
+        // ── Slot not active this day (only hide for vendors; supervisors see it) ──
+        if(!slotActiveToday&&!isPriv){
+          html+=`<td><div class="dc past" style="opacity:.35">–</div></td>`;
+          return;
+        }
+        // ── Normal cell ───────────────────────────────────
+        totalSlots++;
+        if(past&&!bk){
+          html+=`<td><div class="dc past">–</div></td>`;
+        } else if(bk){
           bookedSlots++;
           const isMine=bk.vendorId===vid||bk.vendorId===S.user.vendorId;
-          const isPrivUser=['admin','supervisor'].includes(S.user.role);
-          const canClickBk=isMine||isPrivUser;
-          // All users see vendor info; only own booking / admin / supervisor can click
           if(isMine){
-            html+=`<td><div class="dc mine" onclick="viewBooking('${bk.id}')" title="Your booking — click to view">
+            html+=`<td><div class="dc mine" onclick="viewBooking('${bk.id}')" title="Your booking">
               <span style="font-size:11px;font-weight:700">${bk.vendorId}</span>
               <span class="dc-sub">${bk.vendorName?(bk.vendorName.slice(0,20)+'…'):'—'}</span>
             </div></td>`;
-          } else if(isPrivUser){
-            html+=`<td><div class="dc busy" onclick="viewBooking('${bk.id}')" style="cursor:pointer" title="Click to view details">
+          } else if(isPriv){
+            html+=`<td><div class="dc busy" onclick="viewBooking('${bk.id}')" style="cursor:pointer" title="Click to view">
               <span style="font-size:11px;font-weight:700">${bk.vendorId}</span>
               <span class="dc-sub">${bk.vendorName?(bk.vendorName.slice(0,20)+'…'):'—'}</span>
             </div></td>`;
           } else {
-            // Vendor: show who booked (read-only, no click)
             html+=`<td><div class="dc busy" title="${bk.vendorId}">
               <span style="font-size:11px;font-weight:700">${bk.vendorId}</span>
               <span class="dc-sub">${bk.vendorName?(bk.vendorName.slice(0,20)+'…'):'Booked'}</span>
