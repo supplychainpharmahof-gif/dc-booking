@@ -1655,7 +1655,7 @@ function renderMyBkTable(filter=''){
     <td style="white-space:nowrap">${b.dock||'—'}</td>
     <td><span class="chip c-blue">${b.warehouse||'—'}</span></td>
     <td style="font-size:12px">${(b.pos||[]).map(p=>p.po).join(', ')||'—'}</td>
-    <td style="text-align:center;font-weight:700">${(b.pos||[]).reduce((s,p)=>s+(parseInt(p.lines)||0),0)}</td>
+    <td style="text-align:center;font-weight:700">${b.totalLines||(b.pos||[]).reduce((s,p)=>s+(parseInt(p.lines)||1),0)}</td>
     <td style="white-space:nowrap">${b.truckQty||1}× ${b.truckType||'—'}</td>
     <td><span class="chip c-${safeStatus(b.status)==='confirmed'?'green':safeStatus(b.status)==='cancelled'?'red':'yellow'}">${safeStatus(b.status)}</span></td>
     <td style="display:flex;gap:5px;white-space:nowrap">
@@ -1692,7 +1692,7 @@ async function loadAllBookings(from='',to=''){
     <td style="white-space:nowrap">${b.dock||'—'}</td>
     <td><span class="chip c-blue">${b.warehouse||'—'}</span></td>
     <td style="font-size:11px">${(b.pos||[]).map(p=>p.po).join('<br>')||'—'}</td>
-    <td style="text-align:center;font-weight:700">${(b.pos||[]).reduce((s,p)=>s+(parseInt(p.lines)||0),0)}</td>
+    <td style="text-align:center;font-weight:700">${b.totalLines||(b.pos||[]).reduce((s,p)=>s+(parseInt(p.lines)||1),0)}</td>
     <td style="white-space:nowrap">${b.truckQty||1}× ${b.truckType||'—'}</td>
     <td style="font-size:11px">${b.email||'—'}</td>
     <td><span class="chip c-${safeStatus(b.status)==='confirmed'?'green':safeStatus(b.status)==='cancelled'?'red':'yellow'}">${safeStatus(b.status)}</span></td>
@@ -1749,7 +1749,7 @@ async function loadReports(){
     <td>${b.vendorId}<br><span style="font-size:11px;color:var(--tx2)">${(b.vendorName||'').slice(0,28)}</span></td>
     <td><span class="chip c-blue">${b.warehouse||'—'}</span></td>
     <td style="font-size:11px">${(b.pos||[]).map(p=>p.po).join(', ')||'—'}</td>
-    <td style="text-align:center;font-weight:600">${(b.pos||[]).reduce((s,p)=>s+(parseInt(p.lines)||0),0)}</td>
+    <td style="text-align:center;font-weight:600">${b.totalLines||(b.pos||[]).reduce((s,p)=>s+(parseInt(p.lines)||1),0)}</td>
     <td>${b.truckQty||1}× ${b.truckType||'—'}</td></tr>`).join('')}
   </tbody></table>`;
   document.getElementById('rpt-time').value=S.cfg.reportTime||'07:00';
@@ -1953,7 +1953,7 @@ function exportCSV(data,name){
   // 1 row per booking — POs listed as "PO1(lines) | PO2(lines)"
   const rows=data.map(b=>{
     const poStr=(b.pos||[]).map(p=>`${p.po}(${p.lines||1})`).join(' | ');
-    const totalLines=(b.pos||[]).reduce((s,p)=>s+(parseInt(p.lines)||1),0);
+    const totalLines=b.totalLines||(b.pos||[]).reduce((s,p)=>s+(parseInt(p.lines)||1),0);
     return [
       b.id, b.createdAt||'', b.vendorId, `"${b.vendorName||''}"`,
       safeDate(b.date), safeTime(b.startTime), safeTime(b.endTime),
