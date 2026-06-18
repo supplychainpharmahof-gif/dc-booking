@@ -728,6 +728,38 @@ table.dt{width:100%;border-collapse:collapse}
   </div>
 </div>
 
+<!-- ── MODAL: EDIT BOOKING POs ─────────────────────────── -->
+<div class="ov" id="ov-edit-pos">
+  <div class="modal">
+    <div class="mh"><div class="mt">✏️ Edit Booking POs</div><button class="mc" onclick="closeOv('ov-edit-pos')">✕</button></div>
+    <div class="alert a-warn" style="margin-bottom:14px">
+      ⚠️ <strong>Note:</strong> Booking time, dock, and warehouse cannot be changed. Only PO selection and remark can be revised.
+    </div>
+    <div class="alert a-info" id="edit-pos-ctx" style="margin-bottom:14px"></div>
+    <div class="fg">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <label style="margin:0">Revise Purchase Orders <span class="req">*</span></label>
+        <span id="edit-po-cnt" class="chip c-blue">0 selected</span>
+      </div>
+      <div class="po-wrap">
+        <div class="po-search">
+          <span style="color:var(--tx2)">🔍</span>
+          <input type="text" id="edit-po-srch" placeholder="Search PO number or vendor name..." oninput="filterEditPOs(this.value)" style="font-size:15px">
+        </div>
+        <div id="edit-po-items"><div class="loading"><div class="spinner"></div>Loading...</div></div>
+      </div>
+      <div class="help mt1">Max <strong id="edit-max-lines">10</strong> total lines &nbsp;·&nbsp; <span id="edit-lines-used">0 used</span> &nbsp;·&nbsp; Single PO exceeding limit is allowed</div>
+    </div>
+    <div class="fg"><label>Remark (optional)</label>
+      <textarea id="edit-remark" style="font-size:15px"></textarea>
+    </div>
+    <div class="mf">
+      <button class="btn btn-ghost" onclick="closeOv('ov-edit-pos')">Cancel</button>
+      <button class="btn btn-success" id="edit-pos-save-btn" onclick="saveEditedPOs()">✓ Save Changes</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── MODAL: SPECIAL DOCK ──────────────────────────────── -->
 <div class="ov" id="ov-spcl">
   <div class="modal modal-sm">
@@ -857,11 +889,22 @@ async function demoApi(action,data){
     case 'getConfig':return{ok:true,data:DEMO.cfg};
     case 'saveConfig':{DEMO.cfg=data.config;return{ok:true};}
     case 'getVendors':return{ok:true,data:VENDORS_MASTER.map(v=>({...v,signedUpDate:null,email:''}))};
-    case 'getOpenPO':{const pos=[{vendorId:'10004-108',vendorName:'BLACKMORES',po:'PMA26-29858',wh:'WH01',lines:2},{vendorId:'10004-108',vendorName:'BLACKMORES',po:'PMA26-29830',wh:'WH01',lines:1},{vendorId:'10004-108',vendorName:'BLACKMORES',po:'PMA26-29801',wh:'WHPT01',lines:2}];return{ok:true,data:data.vendorId?pos.filter(p=>p.vendorId===data.vendorId):pos};}
+    case 'getOpenPO':{
+      const pos=[{vendorId:'10004-108',vendorName:'BLACKMORES',po:'PMA26-29858',wh:'WH01',lines:2},{vendorId:'10004-108',vendorName:'BLACKMORES',po:'PMA26-29830',wh:'WH01',lines:1},{vendorId:'10004-108',vendorName:'BLACKMORES',po:'PMA26-29801',wh:'WHPT01',lines:2}];
+      // Exclude POs already confirmed in bookings (except those in editCtx — being edited)
+      const editingId = editCtx && editCtx.bookingId;
+      const bookedPOs = new Set(
+        (DEMO.bookings||[])
+          .filter(b=>b.status!=='cancelled' && b.id!==editingId)
+          .flatMap(b=>(b.pos||[]).map(p=>p.po))
+      );
+      const filtered = pos.filter(p => !bookedPOs.has(p.po));
+      return{ok:true,data:data.vendorId?filtered.filter(p=>p.vendorId===data.vendorId):filtered};
+    }
     case 'getBookings':{let bks=DEMO.bookings;if(data.vendorId)bks=bks.filter(b=>b.vendorId===data.vendorId);if(data.dateFrom)bks=bks.filter(b=>b.date>=data.dateFrom);if(data.dateTo)bks=bks.filter(b=>b.date<=data.dateTo);return{ok:true,data:bks};}
     case 'createBooking':{const clash=DEMO.bookings.find(b=>b.date===data.date&&b.dock===data.dock&&b.startTime===data.startTime&&b.warehouse===data.warehouse&&b.status!=='cancelled');if(clash)return{ok:false,error:'Slot just booked by another vendor.'};const id=genId();const bks=DEMO.bookings;bks.push({...data,id,createdAt:nowStr(),status:'confirmed'});DEMO.bookings=bks;return{ok:true,bookingId:id};}
     case 'cancelBooking':{const bks=DEMO.bookings;const i=bks.findIndex(b=>b.id===data.bookingId);if(i<0)return{ok:false,error:'Not found'};bks[i].status='cancelled';DEMO.bookings=bks;return{ok:true};}
-    case 'updateBooking':{const bks=DEMO.bookings;const i=bks.findIndex(b=>b.id===data.bookingId);if(i<0)return{ok:false,error:'Not found'};if(data.remark!==undefined)bks[i].remark=data.remark;DEMO.bookings=bks;return{ok:true};}
+    case 'updateBooking':{const bks=DEMO.bookings;const i=bks.findIndex(b=>b.id===data.bookingId);if(i<0)return{ok:false,error:'Not found'};if(data.remark!==undefined)bks[i].remark=data.remark;if(data.pos!==undefined)bks[i].pos=data.pos;DEMO.bookings=bks;return{ok:true};}
     case 'getUsers':return{ok:true,data:DEMO.users.map(u=>({...u,password:undefined}))};
     case 'createUser':{const us=DEMO.users;if(us.find(u=>u.email===data.email))return{ok:false,error:'Email exists'};us.push({...data});DEMO.users=us;return{ok:true};}
     case 'deleteUser':{const us=DEMO.users.filter(u=>u.email!==data.email);DEMO.users=us;return{ok:true};}
@@ -1145,9 +1188,25 @@ function renderDockGrid(){
           bookedSlots++;
           const isMine=bk.vendorId===vid||bk.vendorId===S.user.vendorId;
           const isPrivUser=['admin','supervisor'].includes(S.user.role);
-          if(isMine)html+=`<td><div class="dc mine" onclick="viewBooking('${bk.id}')" title="Click to view"><span style="font-size:11px">${bk.vendorId}</span><span class="dc-sub">${bk.vendorName?(bk.vendorName.slice(0,18)+'…'):'—'}</span></div></td>`;
-          else if(isPrivUser)html+=`<td><div class="dc busy" onclick="viewBooking('${bk.id}')" style="cursor:pointer" title="Click to view"><span style="font-size:11px">${bk.vendorId}</span><span class="dc-sub">${bk.vendorName?(bk.vendorName.slice(0,18)+'…'):'—'}</span></div></td>`;
-          else html+=`<td><div class="dc busy">Booked</div></td>`;
+          const canClickBk=isMine||isPrivUser;
+          // All users see vendor info; only own booking / admin / supervisor can click
+          if(isMine){
+            html+=`<td><div class="dc mine" onclick="viewBooking('${bk.id}')" title="Your booking — click to view">
+              <span style="font-size:11px;font-weight:700">${bk.vendorId}</span>
+              <span class="dc-sub">${bk.vendorName?(bk.vendorName.slice(0,20)+'…'):'—'}</span>
+            </div></td>`;
+          } else if(isPrivUser){
+            html+=`<td><div class="dc busy" onclick="viewBooking('${bk.id}')" style="cursor:pointer" title="Click to view details">
+              <span style="font-size:11px;font-weight:700">${bk.vendorId}</span>
+              <span class="dc-sub">${bk.vendorName?(bk.vendorName.slice(0,20)+'…'):'—'}</span>
+            </div></td>`;
+          } else {
+            // Vendor: show who booked (read-only, no click)
+            html+=`<td><div class="dc busy" title="${bk.vendorId}">
+              <span style="font-size:11px;font-weight:700">${bk.vendorId}</span>
+              <span class="dc-sub">${bk.vendorName?(bk.vendorName.slice(0,20)+'…'):'Booked'}</span>
+            </div></td>`;
+          }
         }else{
           const sp=cfg.specialDocks.find(s=>s.wh===wh.id&&s.dock===d);
           html+=`<td><div class="${sp?'dc spcl':'dc free'}" onclick="startBooking('${d}','${st}','${et}','${dateStr}')">${sp?'⭐ Book':'✓ Book'}</div></td>`;
@@ -1365,10 +1424,107 @@ function viewBooking(id){
   const ftr=document.getElementById('vb-footer');
   let btns=`<button class="btn btn-ghost" onclick="closeOv('ov-view')">Close</button>`;
   if(canPrint) btns=`<button class="btn btn-ghost btn-sm" onclick="printBooking('${b.id}')">🖨️ Print</button>`+btns;
-  if(canEdit&&b.status!=='cancelled') btns=`<button class="btn btn-danger btn-sm" onclick="cancelBooking('${b.id}')">✕ Cancel</button>${['admin','supervisor'].includes(S.user.role)?`<button class="btn btn-ghost btn-sm" onclick="editRemark('${b.id}')">✏️ Remark</button>`:''}`+btns;
+  if(canEdit&&b.status!=='cancelled') btns=`<button class="btn btn-danger btn-sm" onclick="cancelBooking('${b.id}')">✕ Cancel</button><button class="btn btn-primary btn-sm" onclick="openEditPOs('${b.id}')">✏️ Edit POs</button>${['admin','supervisor'].includes(S.user.role)?`<button class="btn btn-ghost btn-sm" onclick="editRemark('${b.id}')">📝 Remark</button>`:''}`+btns;
   ftr.innerHTML=btns;
   openOv('ov-view');
 }
+// ── EDIT BOOKING POs ────────────────────────────────────────
+let editCtx = { bookingId: null, allPOs: [], selectedPOs: [] };
+
+async function openEditPOs(id) {
+  const allBk = S.liveBookings !== null ? S.liveBookings : DEMO.bookings;
+  const b = allBk.find(x => x.id === id);
+  if (!b) return;
+  editCtx.bookingId = id;
+  editCtx.selectedPOs = (b.pos || []).map(p => ({ ...p })); // copy current POs
+
+  // Context info
+  document.getElementById('edit-pos-ctx').innerHTML =
+    `📍 <strong>${b.warehouse}</strong> &nbsp;·&nbsp; <strong>${b.dock}</strong> &nbsp;·&nbsp; <strong>${b.date}</strong> &nbsp;${b.startTime}–${b.endTime} &nbsp;<span class="chip c-blue">${b.vendorId}</span>`;
+  document.getElementById('edit-max-lines').textContent = S.cfg.maxPoLines;
+  document.getElementById('edit-remark').value = b.remark || '';
+
+  // Load available POs for this vendor/warehouse
+  // Include currently booked POs (they belong to this booking)
+  const vid = b.vendorId;
+  document.getElementById('edit-po-items').innerHTML = '<div class="loading"><div class="spinner"></div>Loading POs...</div>';
+  openOv('ov-edit-pos');
+  closeOv('ov-view');
+
+  const r = await api('getOpenPO', { vendorId: vid });
+  // Combine: open POs + currently booked POs (so they appear pre-selected)
+  const openPOs = r.ok ? r.data.filter(p => (p.wh || p.warehouse) === b.warehouse) : [];
+  const currentPONums = new Set((b.pos || []).map(p => p.po));
+  // Add back current booking's POs that may have been excluded by "already booked" filter
+  const currentPOsAsItems = (b.pos || []).map(p => ({
+    po: p.po, vendorName: p.vendorName || b.vendorName, wh: p.wh || b.warehouse, lines: p.lines, isCurrent: true
+  }));
+  // Merge: open POs + current POs (deduplicated)
+  const merged = [...currentPOsAsItems];
+  openPOs.forEach(p => { if (!currentPONums.has(p.po)) merged.push(p); });
+  editCtx.allPOs = merged;
+  renderEditPOList('');
+}
+
+function renderEditPOList(search) {
+  const sorted = [...editCtx.allPOs].sort((a, b) => (a.vendorName || '').localeCompare(b.vendorName || ''));
+  const filtered = search ? sorted.filter(p => p.po.toLowerCase().includes(search.toLowerCase()) || (p.vendorName || '').toLowerCase().includes(search.toLowerCase())) : sorted;
+  const sel = editCtx.selectedPOs;
+  if (!filtered.length) {
+    document.getElementById('edit-po-items').innerHTML = '<div class="empty" style="padding:24px"><div class="empty-ico">📭</div><p>No POs available</p></div>';
+    updateEditPOCount(); return;
+  }
+  document.getElementById('edit-po-items').innerHTML = filtered.map(p => {
+    const isS = sel.find(x => x.po === p.po);
+    const isCurrent = p.isCurrent;
+    return `<div class="poi${isS ? ' sel' : ''}" onclick="toggleEditPO('${p.po}','${p.wh || p.warehouse}',${p.lines},'${(p.vendorName || '').replace(/'/g, "\'")}')">
+      <input type="checkbox" ${isS ? 'checked' : ''} onclick="event.stopPropagation();toggleEditPO('${p.po}','${p.wh || p.warehouse}',${p.lines},'${(p.vendorName || '').replace(/'/g, "\'")}')">
+      <div class="poi-d">
+        <div class="poi-po">${p.po} ${isCurrent ? '<span style="font-size:11px;color:var(--grn);font-weight:600">● current</span>' : ''}</div>
+        <div class="poi-vname">${p.vendorName || ''}</div>
+        <div class="poi-meta">${p.lines} line${p.lines > 1 ? 's' : ''}</div>
+      </div>
+      <div class="poi-wh">${p.wh || p.warehouse}</div>
+    </div>`;
+  }).join('');
+  updateEditPOCount();
+}
+
+function toggleEditPO(po, wh, lines, vendorName) {
+  const sel = editCtx.selectedPOs, i = sel.findIndex(x => x.po === po);
+  if (i >= 0) sel.splice(i, 1); else sel.push({ po, wh, lines: parseInt(lines), vendorName });
+  renderEditPOList(document.getElementById('edit-po-srch').value);
+}
+
+function updateEditPOCount() {
+  const sel = editCtx.selectedPOs || [], lines = sel.reduce((s, p) => s + p.lines, 0);
+  document.getElementById('edit-po-cnt').textContent = `${sel.length} PO${sel.length !== 1 ? 's' : ''} · ${lines} lines`;
+  document.getElementById('edit-lines-used').textContent = `${lines} of ${S.cfg.maxPoLines} lines`;
+  document.getElementById('edit-lines-used').style.color = lines > S.cfg.maxPoLines ? 'var(--red)' : 'var(--tx2)';
+}
+function filterEditPOs(v) { renderEditPOList(v); }
+
+async function saveEditedPOs() {
+  if (!editCtx.selectedPOs.length) { toast('Please select at least one PO.', 'error'); return; }
+  const lines = editCtx.selectedPOs.reduce((t, p) => t + p.lines, 0);
+  if (lines > S.cfg.maxPoLines && editCtx.selectedPOs.length > 1) {
+    toast(`Total lines (${lines}) exceeds max (${S.cfg.maxPoLines}). Deselect some POs or keep to single PO.`, 'error'); return;
+  }
+  const btn = document.getElementById('edit-pos-save-btn');
+  btn.disabled = true; btn.textContent = '⏳ Saving...';
+  const remark = document.getElementById('edit-remark').value;
+  const r = await api('updateBooking', { bookingId: editCtx.bookingId, pos: editCtx.selectedPOs, remark });
+  btn.disabled = false; btn.textContent = '✓ Save Changes';
+  if (!r.ok) { toast(r.error || 'Save failed', 'error'); return; }
+  // Update local cache
+  const allBk = S.liveBookings !== null ? S.liveBookings : DEMO.bookings;
+  const bi = allBk.findIndex(x => x.id === editCtx.bookingId);
+  if (bi >= 0) { allBk[bi].pos = editCtx.selectedPOs; allBk[bi].remark = remark; }
+  closeOv('ov-edit-pos');
+  renderDockGrid();
+  toast('Booking POs updated successfully!', 'success');
+}
+
 async function cancelBooking(id){
   if(!confirm('Cancel this booking?')) return;
   const r=await api('cancelBooking',{bookingId:id});if(!r.ok){toast(r.error,'error');return;}
