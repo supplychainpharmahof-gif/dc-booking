@@ -101,6 +101,13 @@ main{flex:1;padding:20px;max-width:1500px;margin:0 auto;width:100%}
 .vt-btn{padding:5px 14px;border:none;background:none;border-radius:5px;font-size:13px;font-weight:500;color:var(--tx2);cursor:pointer;transition:.15s}
 .vt-btn.on{background:var(--sur);color:var(--acc);font-weight:600;box-shadow:var(--shadow)}
 
+/* ── COMPACT MULTI-DAY GRID ──────────────────────────── */
+.dock-tbl.compact th{padding:4px 6px;font-size:10px}
+.dock-tbl.compact td{height:36px}
+.dock-tbl.compact .dc{font-size:11px}
+.dock-tbl.compact .tc{font-size:11px;padding:0 6px}
+.dock-tbl.compact .date-hdr{font-size:10px;line-height:1.3}
+
 /* ── DOCK GRID ──────────────────────────────────────── */
 .grid-scroll{overflow-x:auto}
 .dock-tbl{border-collapse:collapse;width:100%;min-width:500px}
@@ -372,7 +379,7 @@ table.dt{width:100%;border-collapse:collapse}
               <div class="view-toggle">
                 <button class="vt-btn on" onclick="setView(1,this)">1 Day</button>
                 <button class="vt-btn" onclick="setView(3,this)">3 Days</button>
-                <button class="vt-btn" onclick="setView(7,this)">1 Week</button>
+                <button class="vt-btn" onclick="setView(5,this)">5 Days</button>
               </div>
             </div>
             <div class="legend">
@@ -513,13 +520,37 @@ table.dt{width:100%;border-collapse:collapse}
         </div>
 
         <!-- Time Windows -->
-        <div class="card">
+        <div class="card" style="grid-column:1/-1">
           <div class="card-t">⏰ Time Slots</div>
-          <div id="tw-list" class="tag-list"></div>
-          <div class="add-row mt2">
-            <input type="time" id="new-tw-s" style="width:100px">
+          <div class="help" style="margin-bottom:12px">Set default time slots. Optionally override per-warehouse or per-dock.</div>
+          <div style="overflow-x:auto">
+            <table style="border-collapse:collapse;width:100%;font-size:13px">
+              <thead><tr style="background:var(--sur2)">
+                <th style="padding:8px 10px;border:1px solid var(--bdr);text-align:left;width:110px">Time Slot</th>
+                <th style="padding:8px 10px;border:1px solid var(--bdr);text-align:center">Mon</th>
+                <th style="padding:8px 10px;border:1px solid var(--bdr);text-align:center">Tue</th>
+                <th style="padding:8px 10px;border:1px solid var(--bdr);text-align:center">Wed</th>
+                <th style="padding:8px 10px;border:1px solid var(--bdr);text-align:center">Thu</th>
+                <th style="padding:8px 10px;border:1px solid var(--bdr);text-align:center">Fri</th>
+                <th style="padding:8px 10px;border:1px solid var(--bdr);text-align:center;color:var(--tx2)">Sat</th>
+                <th style="padding:8px 10px;border:1px solid var(--bdr);text-align:center;color:var(--tx2)">Sun</th>
+                <th style="padding:8px 10px;border:1px solid var(--bdr);text-align:center;width:60px">Remove</th>
+              </tr></thead>
+              <tbody id="tw-table-body"></tbody>
+            </table>
+          </div>
+          <div class="add-row mt2" style="margin-top:12px">
+            <span style="font-size:13px;color:var(--tx2);white-space:nowrap">Add slot:</span>
+            <input type="time" id="new-tw-s" style="width:105px">
             <span style="color:var(--tx2);padding:0 3px">–</span>
-            <input type="time" id="new-tw-e" style="width:100px">
+            <input type="time" id="new-tw-e" style="width:105px">
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:400;text-transform:none;white-space:nowrap"><input type="checkbox" id="new-tw-mon" checked> Mon</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:400;text-transform:none;white-space:nowrap"><input type="checkbox" id="new-tw-tue" checked> Tue</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:400;text-transform:none;white-space:nowrap"><input type="checkbox" id="new-tw-wed" checked> Wed</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:400;text-transform:none;white-space:nowrap"><input type="checkbox" id="new-tw-thu" checked> Thu</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:400;text-transform:none;white-space:nowrap"><input type="checkbox" id="new-tw-fri" checked> Fri</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:400;text-transform:none;white-space:nowrap"><input type="checkbox" id="new-tw-sat"> Sat</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:400;text-transform:none;white-space:nowrap"><input type="checkbox" id="new-tw-sun"> Sun</label>
             <button class="btn btn-primary btn-sm" onclick="addTW()">Add</button>
           </div>
         </div>
@@ -536,7 +567,15 @@ table.dt{width:100%;border-collapse:collapse}
 
         <!-- Holidays -->
         <div class="card">
-          <div class="card-t">🎌 Holidays</div>
+          <div class="card-t">🎌 Holidays & Closed Days</div>
+          <div class="fg">
+            <label>Weekend Setting</label>
+            <div style="display:flex;gap:8px;margin-top:4px">
+              <label style="display:flex;align-items:center;gap:5px;text-transform:none;font-size:13px;font-weight:400;cursor:pointer"><input type="checkbox" id="cfg-sat-closed" onchange="saveAllConfig()"> Saturday Closed</label>
+              <label style="display:flex;align-items:center;gap:5px;text-transform:none;font-size:13px;font-weight:400;cursor:pointer"><input type="checkbox" id="cfg-sun-closed" onchange="saveAllConfig()"> Sunday Closed</label>
+            </div>
+          </div>
+          <div class="help" style="margin-bottom:8px">Specific holiday dates (in addition to weekends):</div>
           <div id="hol-list" class="tag-list"></div>
           <div class="add-row mt2">
             <input type="date" id="new-hol-d" style="width:150px">
@@ -776,8 +815,19 @@ function defaultCfg(){return{
     {id:'WHCM01',name:'WHCM01 — CM',docks:['Dock X','Dock Y']},
     {id:'WHSR01',name:'WHSR01 — SR',docks:['Dock 1']},
   ],
-  timeWindows:[['08:30','09:00'],['09:00','10:00'],['10:00','11:00'],['11:00','11:30'],['11:30','12:00'],['12:00','13:00'],['13:00','14:00'],['14:00','15:00'],['15:00','16:00'],['16:00','16:30']],
-  holidays:[],specialDocks:[],maxPoLines:10,bookingWindowDays:14,maxBookingsPerDay:3,
+  timeWindows:[
+    {s:'08:30',e:'09:00',days:[1,2,3,4,5]},
+    {s:'09:00',e:'10:00',days:[1,2,3,4,5]},
+    {s:'10:00',e:'11:00',days:[1,2,3,4,5]},
+    {s:'11:00',e:'11:30',days:[1,2,3,4,5]},
+    {s:'11:30',e:'12:00',days:[1,2,3,4,5]},
+    {s:'12:00',e:'13:00',days:[1,2,3,4,5]},
+    {s:'13:00',e:'14:00',days:[1,2,3,4,5]},
+    {s:'14:00',e:'15:00',days:[1,2,3,4,5]},
+    {s:'15:00',e:'16:00',days:[1,2,3,4,5]},
+    {s:'16:00',e:'16:30',days:[1,2,3,4,5]},
+  ],
+  holidays:[],specialDocks:[],satClosed:true,sunClosed:true,maxPoLines:10,bookingWindowDays:14,maxBookingsPerDay:3,
   cutoffTime:'16:00',cancelDeadlineHours:24,truckTypes:['4W','6W','10W','Trailer'],
   reportTime:'07:00',reportRecipients:[],
 };}
@@ -1049,31 +1099,54 @@ function renderDockGrid(){
   // Build date columns
   const dates=[];for(let i=0;i<S.viewDays;i++) dates.push(getDateOffset(S.selectedDate,i));
   document.getElementById('dt-label').textContent=S.viewDays===1?fmtDateDisp(S.selectedDate):`${fmtDateDisp(S.selectedDate)} + ${S.viewDays-1} days`;
-  const times=cfg.timeWindows;
+  // Normalize timeWindows: support both old array format and new object format
+  const times=(cfg.timeWindows||[]).map(tw=>typeof tw==='object'&&!Array.isArray(tw)?tw:{s:tw[0],e:tw[1],days:[1,2,3,4,5]});
   let totalSlots=0,bookedSlots=0;
+  const tbl=document.getElementById('dock-grid');
+  tbl.className=S.viewDays>1?'dock-tbl compact':'dock-tbl';
   let html='<thead><tr><th style="width:75px;border-right:2px solid var(--bdr)">Time</th>';
   dates.forEach(dt=>{
-    const hol=cfg.holidays.find(h=>h.date===fmtDate(dt));
     docks.forEach(d=>{
       const sp=cfg.specialDocks.find(s=>s.wh===wh.id&&s.dock===d);
-      html+=`<th class="${S.viewDays>1?'date-hdr':''}">${S.viewDays>1?fmtDateDisp(dt)+' · ':''}${d}${sp?' ⭐':''}</th>`;
+      if(S.viewDays>1){
+        html+=`<th class="date-hdr" style="line-height:1.3"><div style="font-size:10px;font-weight:600;color:var(--acc);opacity:.8">${fmtDateDisp(dt)}</div><div>${d}${sp?' ⭐':''}</div></th>`;
+      } else {
+        html+=`<th>${d}${sp?' ⭐':''}</th>`;
+      }
     });
   });
   html+='</tr></thead><tbody>';
-  times.forEach(([st,et])=>{
+  times.forEach(twObj=>{
+    const [st,et]=[twObj.s||twObj[0],twObj.e||twObj[1]];
+    const twDays=twObj.days||[1,2,3,4,5];
+    // Check if this slot applies to any of the dates we're showing
+    const anyDate=dates.some(dt=>twDays.includes(new Date(fmtDate(dt)+'T12:00:00').getDay()));
+    if(!anyDate)return; // skip slot if not available any shown day
     html+=`<tr><td class="tc">${st}</td>`;
     dates.forEach(dt=>{
       const dateStr=fmtDate(dt);const hol=cfg.holidays.find(h=>h.date===dateStr);
+      const dtDayNum=new Date(dateStr+'T12:00:00').getDay();
+      const slotActiveToday=twDays.includes(dtDayNum);
       docks.forEach(d=>{
+        if(!slotActiveToday){html+=`<td><div class="dc closed" style="background:var(--sur2);color:var(--tx3);cursor:default;font-size:11px">–</div></td>`;return;}
         totalSlots++;
         const bk=getActiveBookings().find(b=>b.date===dateStr&&b.warehouse===wh.id&&b.dock===d&&b.startTime===st);
         const past=isPast(dateStr,st);
-        if(hol){html+=`<td><div class="dc hol">🎌 ${hol.name}</div></td>`;}
+        // Check if day is weekend closed (supervisors/admins can still book)
+        const dayOfWeek=new Date(dateStr+'T12:00:00').getDay();
+        const isSat=dayOfWeek===6,isSun=dayOfWeek===0;
+        const isWeekendClosed=(isSat&&cfg.satClosed)||(isSun&&cfg.sunClosed);
+        const canOverride=['admin','supervisor'].includes(S.user.role);
+        if(hol&&!canOverride){html+=`<td><div class="dc hol">🎌 ${hol.name}</div></td>`;}
+        else if(hol&&canOverride){html+=`<td><div class="dc ${bk?'busy':'free'}" onclick="${bk?`viewBooking('${bk&&bk.id}')`:`startBooking('${d}','${st}','${et}','${dateStr}')`}" title="Holiday — supervisor override"><span>🎌</span>${bk?'Booked':'Book'}</div></td>`;}
+        else if(isWeekendClosed&&!canOverride&&!bk){html+=`<td><div class="dc hol">Weekend</div></td>`;}
         else if(past&&!bk){html+=`<td><div class="dc past">–</div></td>`;}
         else if(bk){
           bookedSlots++;
           const isMine=bk.vendorId===vid||bk.vendorId===S.user.vendorId;
-          if(isMine)html+=`<td><div class="dc mine" onclick="viewBooking('${bk.id}')" title="Your booking">${bk.vendorId}<span class="dc-sub">${bk.warehouse}</span></div></td>`;
+          const isPrivUser=['admin','supervisor'].includes(S.user.role);
+          if(isMine)html+=`<td><div class="dc mine" onclick="viewBooking('${bk.id}')" title="Click to view"><span style="font-size:11px">${bk.vendorId}</span><span class="dc-sub">${bk.vendorName?(bk.vendorName.slice(0,18)+'…'):'—'}</span></div></td>`;
+          else if(isPrivUser)html+=`<td><div class="dc busy" onclick="viewBooking('${bk.id}')" style="cursor:pointer" title="Click to view"><span style="font-size:11px">${bk.vendorId}</span><span class="dc-sub">${bk.vendorName?(bk.vendorName.slice(0,18)+'…'):'—'}</span></div></td>`;
           else html+=`<td><div class="dc busy">Booked</div></td>`;
         }else{
           const sp=cfg.specialDocks.find(s=>s.wh===wh.id&&s.dock===d);
@@ -1221,14 +1294,16 @@ function continueBooking(){closeOv('ov-done');renderDockGrid();}
 // ═══════════════════════════════════════════════════
 function buildPrintDoc(b){
   const poRows=(b.pos||[]).map(p=>`<tr><td>${p.po}</td><td>${p.vendorName||b.vendorName||''}</td><td style="text-align:center">${p.lines}</td><td>${p.wh||b.warehouse}</td></tr>`).join('');
+  const logoHtml=S.cfg&&S.cfg.logoData?`<img src="${S.cfg.logoData}" style="height:60px;width:auto;object-fit:contain;border-radius:8px">`:
+    `<div style="font-size:22px;font-weight:700;color:#1a73e8">${S.cfg&&S.cfg.appName||'PMH Slot Booking'}</div>`;
   return `<div class="print-doc">
     <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000;padding-bottom:14px;margin-bottom:14px">
-      <div><h2>${S.cfg.appName||'PMH Slot Booking'}</h2><div class="print-sub">Booking Confirmation Document</div></div>
+      <div style="display:flex;align-items:center;gap:14px">${logoHtml}<div><h2 style="font-size:16px">${S.cfg&&S.cfg.appName||'PMH Slot Booking'}</h2><div class="print-sub">Booking Confirmation Document</div></div></div>
       <div style="text-align:right;font-size:13px"><strong>Booking ID:</strong> ${b.id||b.bookingId}<br><strong>Date Printed:</strong> ${new Date().toLocaleDateString('en-GB')}</div>
     </div>
     <table class="print-table">
-      <tr><th colspan="2">Booking Details</th></tr>
-      <tr><td style="width:200px"><strong>Vendor</strong></td><td>${b.vendorId} — ${b.vendorName}</td></tr>
+      <tr><th colspan="2" style="background:#e8f0fe;font-size:13px">Booking Details</th></tr>
+      <tr><td style="width:180px"><strong>Vendor</strong></td><td>${b.vendorId} — ${b.vendorName}</td></tr>
       <tr><td><strong>Book Date</strong></td><td>${b.date}</td></tr>
       <tr><td><strong>Time Slot</strong></td><td>${b.startTime} – ${b.endTime}</td></tr>
       <tr><td><strong>Dock</strong></td><td>${b.dock}</td></tr>
@@ -1238,15 +1313,15 @@ function buildPrintDoc(b){
       ${b.remark?`<tr><td><strong>Remark</strong></td><td>${b.remark}</td></tr>`:''}
     </table>
     <table class="print-table">
-      <thead><tr><th>Purchase Order</th><th>Vendor / Division</th><th style="text-align:center">Lines</th><th>Warehouse</th></tr></thead>
+      <thead><tr><th>Purchase Order</th><th>Vendor / Division</th><th style="text-align:center">Lines</th><th>WH</th></tr></thead>
       <tbody>${poRows}</tbody>
+      <tfoot><tr><td colspan="2" style="text-align:right;font-weight:700">Total Lines:</td><td style="text-align:center;font-weight:700">${(b.pos||[]).reduce((s,p)=>s+p.lines,0)}</td><td></td></tr></tfoot>
     </table>
     <div class="print-sign">
       <div class="sign-box"><div class="sign-line" style="margin-top:50px"></div><div class="sign-label">Vendor Representative</div></div>
-      <div class="sign-box"><div class="sign-line" style="margin-top:50px"></div><div class="sign-label">DC Receiver</div></div>
-      <div class="sign-box"><div class="sign-line" style="margin-top:50px"></div><div class="sign-label">DC Supervisor</div></div>
+      <div class="sign-box"><div class="sign-line" style="margin-top:50px"></div><div class="sign-label">DC Receiver / Checker</div></div>
     </div>
-    <div style="margin-top:24px;font-size:11px;color:#888;text-align:center">This document must be presented upon arrival at the DC. Booking ID: ${b.id||b.bookingId}</div>
+    <div style="margin-top:24px;font-size:11px;color:#888;text-align:center">Present this document upon arrival at the DC. &nbsp;|&nbsp; Booking ID: ${b.id||b.bookingId} &nbsp;|&nbsp; Printed: ${new Date().toLocaleString('en-GB')}</div>
   </div>`;
 }
 function printBooking(id){
@@ -1504,10 +1579,20 @@ function renderConfig(){
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:6px">${wh.docks.map((d,di)=>`<div class="dock-tag">${d} <button class="tag-rm" onclick="removeDock(${wi},${di})">×</button></div>`).join('')}</div>
     </div>`).join('');
-  document.getElementById('tw-list').innerHTML=(cfg.timeWindows||[]).map((tw,i)=>`<div class="tag">${tw[0]}–${tw[1]} <button class="tag-rm" onclick="removeTW(${i})">×</button></div>`).join('');
+  // Render time windows as table with day checkboxes
+  const twBody=document.getElementById('tw-table-body');
+  const DAYS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const DAYNUM=[1,2,3,4,5,6,0];
+  if(twBody){twBody.innerHTML=(cfg.timeWindows||[]).map((tw,i)=>{
+    const twObj=typeof tw==='object'&&!Array.isArray(tw)?tw:{s:tw[0],e:tw[1],days:[1,2,3,4,5]};
+    const dayCells=DAYNUM.map((d,di)=>`<td style="border:1px solid var(--bdr);text-align:center"><input type="checkbox" ${(twObj.days||[1,2,3,4,5]).includes(d)?'checked':''} onchange="updateTWDay(${i},${d},this.checked)"></td>`).join('');
+    return`<tr><td style="border:1px solid var(--bdr);padding:6px 10px;font-weight:600">${twObj.s}–${twObj.e}</td>${dayCells}<td style="border:1px solid var(--bdr);text-align:center"><button class="tag-rm" onclick="removeTW(${i})">×</button></td></tr>`;
+  }).join('');}
   document.getElementById('tt-list').innerHTML=(cfg.truckTypes||[]).map((t,i)=>`<div class="tag">${t} <button class="tag-rm" onclick="removeTT(${i})">×</button></div>`).join('');
   document.getElementById('hol-list').innerHTML=(cfg.holidays||[]).map((h,i)=>`<div class="tag">🎌 ${h.date} ${h.name} <button class="tag-rm" onclick="removeHol(${i})">×</button></div>`).join('');
   document.getElementById('spcl-list').innerHTML=(cfg.specialDocks||[]).length?(cfg.specialDocks||[]).map((s,i)=>`<div class="tag">⭐ ${s.wh}:${s.dock} → ${s.vendorId} <button class="tag-rm" onclick="removeSpclDock(${i})">×</button></div>`).join(''):'<div style="font-size:12px;color:var(--tx2)">None assigned</div>';
+  document.getElementById('cfg-sat-closed').checked=cfg.satClosed!==false;
+  document.getElementById('cfg-sun-closed').checked=cfg.sunClosed!==false;
   document.getElementById('cfg-maxpo').value=cfg.maxPoLines||10;
   document.getElementById('cfg-windays').value=cfg.bookingWindowDays||14;
   document.getElementById('cfg-maxday').value=cfg.maxBookingsPerDay||3;
@@ -1531,8 +1616,33 @@ function submitAddDock(){const name=document.getElementById('new-dock-name').val
 function removeDock(wi,di){S.cfg.warehouses[wi].docks.splice(di,1);renderConfig();}
 function removeWH(wi){if(!confirm('Remove this warehouse?'))return;S.cfg.warehouses.splice(wi,1);renderConfig();renderWHCards();}
 function addWH(){const id=document.getElementById('new-wh-id').value.trim(),name=document.getElementById('new-wh-name').value.trim();if(!id)return;S.cfg.warehouses.push({id,name:name||id,docks:[]});document.getElementById('new-wh-id').value='';document.getElementById('new-wh-name').value='';renderConfig();renderWHCards();toast(`Warehouse "${id}" added.`,'success');}
-function addTW(){const s=document.getElementById('new-tw-s').value,e=document.getElementById('new-tw-e').value;if(!s||!e)return;S.cfg.timeWindows.push([s,e]);renderConfig();if(S.selectedWH)renderDockGrid();toast('Slot added.','success');}
-function removeTW(i){S.cfg.timeWindows.splice(i,1);renderConfig();if(S.selectedWH)renderDockGrid();}
+function addTW(){
+  const s=document.getElementById('new-tw-s').value,e=document.getElementById('new-tw-e').value;
+  if(!s||!e){toast('Please set start and end time.','error');return;}
+  const days=[];
+  if(document.getElementById('new-tw-mon').checked)days.push(1);
+  if(document.getElementById('new-tw-tue').checked)days.push(2);
+  if(document.getElementById('new-tw-wed').checked)days.push(3);
+  if(document.getElementById('new-tw-thu').checked)days.push(4);
+  if(document.getElementById('new-tw-fri').checked)days.push(5);
+  if(document.getElementById('new-tw-sat').checked)days.push(6);
+  if(document.getElementById('new-tw-sun').checked)days.push(0);
+  if(!days.length){toast('Select at least one day.','error');return;}
+  S.cfg.timeWindows.push({s,e,days});
+  renderConfig();if(S.selectedWH)renderDockGrid();toast('Slot added.','success');
+}
+function updateTWDay(twIdx,day,checked){
+  const tw=S.cfg.timeWindows[twIdx];
+  const twObj=typeof tw==='object'&&!Array.isArray(tw)?tw:{s:tw[0],e:tw[1],days:[1,2,3,4,5]};
+  if(checked){if(!twObj.days.includes(day))twObj.days.push(day);}
+  else{twObj.days=twObj.days.filter(d=>d!==day);}
+  S.cfg.timeWindows[twIdx]=twObj;
+  // Don't re-render full config — just save state silently
+}
+function removeTW(i){
+  if(!confirm('Remove this time slot? Existing bookings on this slot will NOT be affected.'))return;
+  S.cfg.timeWindows.splice(i,1);renderConfig();if(S.selectedWH)renderDockGrid();
+}
 function addTT(){const v=document.getElementById('new-tt').value.trim();if(!v)return;S.cfg.truckTypes.push(v);document.getElementById('new-tt').value='';renderConfig();}
 function removeTT(i){S.cfg.truckTypes.splice(i,1);renderConfig();}
 function addHol(){const d=document.getElementById('new-hol-d').value,n=document.getElementById('new-hol-n').value.trim();if(!d||!n)return;S.cfg.holidays.push({date:d,name:n});renderConfig();if(S.selectedWH)renderDockGrid();}
@@ -1552,6 +1662,8 @@ async function saveAllConfig(){
   S.cfg.subtitle=document.getElementById('cfg-subtitle').value;
   S.cfg.notice=document.getElementById('cfg-notice').value;
   S.cfg.wiLink=document.getElementById('cfg-wi-link').value;
+  S.cfg.satClosed=document.getElementById('cfg-sat-closed').checked;
+  S.cfg.sunClosed=document.getElementById('cfg-sun-closed').checked;
   S.cfg.maxPoLines=parseInt(document.getElementById('cfg-maxpo').value)||10;
   S.cfg.bookingWindowDays=parseInt(document.getElementById('cfg-windays').value)||14;
   S.cfg.maxBookingsPerDay=parseInt(document.getElementById('cfg-maxday').value)||3;
@@ -1567,8 +1679,30 @@ function saveApiUrl(){const url=document.getElementById('cfg-api-url').value.tri
 // ═══════════════════════════════════════════════════
 function exportCSV(data,name){
   if(!data.length){toast('No data to export.','error');return;}
-  const rows=data.map(b=>[b.id,b.createdAt,b.vendorId,`"${b.vendorName}"`,b.date,b.startTime,b.endTime,b.dock,b.warehouse,`"${(b.pos||[]).map(p=>p.po).join(';')}"`,`"${(b.pos||[]).map(p=>p.vendorName||'').join(';')}"`,`${(b.pos||[]).reduce((s,p)=>s+p.lines,0)}`,b.truckQty,b.truckType,b.email,b.phone,b.status,`"${b.remark||''}"`].join(','));
-  const csv=['Booking ID,Created,Vendor ID,Vendor Name,Date,Start,End,Dock,Warehouse,POs,PO Vendor Names,Total Lines,Truck Qty,Truck Type,Email,Phone,Status,Remark',...rows].join('\n');
+  // 1 row per PO (matching Booking_Log format)
+  const rows=[];
+  data.forEach(b=>{
+    const pos=b.pos&&b.pos.length?b.pos:[{po:'',vendorName:'',wh:b.warehouse,lines:0}];
+    pos.forEach((p,idx)=>{
+      rows.push([
+        idx===0?b.id:'',
+        idx===0?b.createdAt:'',
+        b.vendorId,
+        `"${b.vendorName}"`,
+        b.date,b.startTime,b.endTime,b.dock,b.warehouse,
+        p.po,
+        `"${p.vendorName||b.vendorName||''}"`,
+        p.lines,
+        idx===0?b.truckQty:'',
+        idx===0?b.truckType:'',
+        idx===0?b.email:'',
+        idx===0?b.phone:'',
+        idx===0?b.status:'',
+        idx===0?`"${b.remark||''}"`:'',
+      ].join(','));
+    });
+  });
+  const csv=['Booking ID,Created,Vendor ID,Vendor Name,Date,Start,End,Dock,Warehouse,Purchase Order,PO Vendor Name,PO Lines,Truck Qty,Truck Type,Email,Phone,Status,Remark',...rows].join('\n');
   dlFile(csv,'text/csv',`${name}_${fmtDate(new Date())}.csv`);
 }
 function exportDisplay(){
