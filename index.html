@@ -702,9 +702,8 @@ table.dt{width:100%;border-collapse:collapse}
     <div style="color:var(--acc);font-size:16px;font-weight:700;margin-bottom:4px" id="done-id"></div>
     <div style="color:var(--tx2);font-size:13px;margin-bottom:24px" id="done-note"></div>
     <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-      <button class="btn btn-ghost" onclick="closeOv('ov-done')">Done</button>
-      <button class="btn btn-ghost" onclick="printBookingFromDone()">🖨️ Print Doc</button>
-      <button class="btn btn-primary" onclick="continueBooking()">+ Book Another</button>
+      <button class="btn btn-ghost" onclick="closeOv('ov-done')">Close</button>
+      <button class="btn btn-primary" onclick="printBookingFromDone()">🖨️ Print Doc</button>
     </div>
   </div>
 </div>
@@ -1628,15 +1627,22 @@ function renderMyBkTable(filter=''){
   const bks=filter?S.myBookings.filter(b=>b.id.toLowerCase().includes(filter)||(b.pos||[]).some(p=>p.po.toLowerCase().includes(filter))):S.myBookings;
   const el=document.getElementById('my-bk-tbl');
   if(!bks.length){el.innerHTML='<div class="empty"><div class="empty-ico">📭</div><p>No bookings yet</p></div>';return;}
-  el.innerHTML=`<table class="dt"><thead><tr><th>ID</th><th>Date/Time</th><th>Dock</th><th>WH</th><th>POs</th><th>Truck</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+  el.innerHTML=`<table class="dt"><thead><tr>
+    <th>Booking ID</th><th>Book Date</th><th>Start</th><th>End</th>
+    <th>Dock</th><th>WH</th><th>POs</th><th>Lines</th><th>Truck</th><th>Status</th><th>Actions</th>
+  </tr></thead><tbody>
   ${bks.sort((a,b)=>b.id.localeCompare(a.id)).map(b=>`<tr>
-    <td style="color:var(--acc);font-weight:600">${b.id}</td>
-    <td>${safeDate(b.date)}<br><span style="font-size:11px;color:var(--tx2)">${safeTime(b.startTime)}–${safeTime(b.endTime)}</span></td>
-    <td>${b.dock||'—'}</td><td><span class="chip c-blue">${b.warehouse||'—'}</span></td>
+    <td style="color:var(--acc);font-weight:600;white-space:nowrap">${b.id}</td>
+    <td style="white-space:nowrap">${safeDate(b.date)}</td>
+    <td style="white-space:nowrap">${safeTime(b.startTime)}</td>
+    <td style="white-space:nowrap">${safeTime(b.endTime)}</td>
+    <td style="white-space:nowrap">${b.dock||'—'}</td>
+    <td><span class="chip c-blue">${b.warehouse||'—'}</span></td>
     <td style="font-size:12px">${(b.pos||[]).map(p=>p.po).join(', ')||'—'}</td>
-    <td>${b.truckQty||1}× ${b.truckType||'—'}</td>
+    <td style="text-align:center;font-weight:700">${(b.pos||[]).reduce((s,p)=>s+(parseInt(p.lines)||0),0)}</td>
+    <td style="white-space:nowrap">${b.truckQty||1}× ${b.truckType||'—'}</td>
     <td><span class="chip c-${safeStatus(b.status)==='confirmed'?'green':safeStatus(b.status)==='cancelled'?'red':'yellow'}">${safeStatus(b.status)}</span></td>
-    <td style="display:flex;gap:5px">
+    <td style="display:flex;gap:5px;white-space:nowrap">
       <button class="btn btn-ghost btn-sm" onclick="viewBooking('${b.id}')">View</button>
       <button class="btn btn-ghost btn-sm" onclick="printBooking('${b.id}')">🖨️</button>
     </td>
@@ -1653,19 +1659,29 @@ async function loadAllBookings(from='',to=''){
   if(r.ok){S.allBookings=r.data;S.liveBookings=r.data;}else S.allBookings=DEMO.bookings;
   const el=document.getElementById('all-bk-tbl');
   if(!S.allBookings.length){el.innerHTML='<div class="empty"><div class="empty-ico">📭</div><p>No bookings</p></div>';return;}
-  el.innerHTML=`<table class="dt"><thead><tr><th>ID</th><th>Created</th><th>Vendor</th><th>Date/Time</th><th>Dock</th><th>WH</th><th>POs</th><th>Lines</th><th>Truck</th><th>Status</th><th>Booked By</th><th>Actions</th></tr></thead><tbody>
+  el.innerHTML=`<table class="dt"><thead><tr>
+    <th>Booking ID</th><th>Created</th><th>Vendor ID</th><th>Vendor Name</th>
+    <th>Book Date</th><th>Start</th><th>End</th><th>Dock</th><th>WH</th>
+    <th>POs</th><th>Total Lines</th><th>Truck</th><th>Email</th>
+    <th>Status</th><th>Booked By</th><th>Actions</th>
+  </tr></thead><tbody>
   ${S.allBookings.sort((a,b)=>b.id.localeCompare(a.id)).map(b=>`<tr>
-    <td style="color:var(--acc);font-weight:600">${b.id}</td>
-    <td style="font-size:11px">${b.createdAt}</td>
-    <td>${b.vendorId}<br><span style="font-size:11px;color:var(--tx2)">${b.vendorName.slice(0,30)}</span></td>
-    <td>${safeDate(b.date)}<br><span style="font-size:11px;color:var(--tx2)">${safeTime(b.startTime)}–${safeTime(b.endTime)}</span></td>
-    <td>${b.dock||'—'}</td><td><span class="chip c-blue">${b.warehouse||'—'}</span></td>
-    <td style="font-size:11px">${(b.pos||[]).map(p=>p.po).join(', ')||'—'}</td>
-    <td style="text-align:center;font-weight:600">${(b.pos||[]).reduce((s,p)=>s+(parseInt(p.lines)||0),0)}</td>
-    <td>${b.truckQty||1}× ${b.truckType||'—'}</td>
+    <td style="color:var(--acc);font-weight:600;white-space:nowrap">${b.id}</td>
+    <td style="font-size:11px;white-space:nowrap">${b.createdAt||'—'}</td>
+    <td style="font-size:12px;white-space:nowrap">${b.vendorId||'—'}</td>
+    <td style="font-size:12px">${(b.vendorName||'').slice(0,35)}</td>
+    <td style="white-space:nowrap">${safeDate(b.date)}</td>
+    <td style="white-space:nowrap">${safeTime(b.startTime)}</td>
+    <td style="white-space:nowrap">${safeTime(b.endTime)}</td>
+    <td style="white-space:nowrap">${b.dock||'—'}</td>
+    <td><span class="chip c-blue">${b.warehouse||'—'}</span></td>
+    <td style="font-size:11px">${(b.pos||[]).map(p=>p.po).join('<br>')||'—'}</td>
+    <td style="text-align:center;font-weight:700">${(b.pos||[]).reduce((s,p)=>s+(parseInt(p.lines)||0),0)}</td>
+    <td style="white-space:nowrap">${b.truckQty||1}× ${b.truckType||'—'}</td>
+    <td style="font-size:11px">${b.email||'—'}</td>
     <td><span class="chip c-${safeStatus(b.status)==='confirmed'?'green':safeStatus(b.status)==='cancelled'?'red':'yellow'}">${safeStatus(b.status)}</span></td>
     <td style="font-size:11px;color:var(--tx2)">${b.bookedBy||'—'}</td>
-    <td style="display:flex;gap:4px">
+    <td style="display:flex;gap:4px;white-space:nowrap">
       <button class="btn btn-ghost btn-sm" onclick="viewBooking('${b.id}')">View</button>
       <button class="btn btn-ghost btn-sm" onclick="printBooking('${b.id}')">🖨️</button>
     </td>
