@@ -903,7 +903,13 @@ async function demoApi(action,data){
     case 'getBookings':{let bks=DEMO.bookings;if(data.vendorId)bks=bks.filter(b=>b.vendorId===data.vendorId);if(data.dateFrom)bks=bks.filter(b=>b.date>=data.dateFrom);if(data.dateTo)bks=bks.filter(b=>b.date<=data.dateTo);return{ok:true,data:bks};}
     case 'createBooking':{const clash=DEMO.bookings.find(b=>b.date===data.date&&b.dock===data.dock&&b.startTime===data.startTime&&b.warehouse===data.warehouse&&b.status!=='cancelled');if(clash)return{ok:false,error:'Slot just booked by another vendor.'};const id=genId();const bks=DEMO.bookings;bks.push({...data,id,createdAt:nowStr(),status:'confirmed'});DEMO.bookings=bks;return{ok:true,bookingId:id};}
     case 'cancelBooking':{const bks=DEMO.bookings;const i=bks.findIndex(b=>b.id===data.bookingId);if(i<0)return{ok:false,error:'Not found'};bks[i].status='cancelled';DEMO.bookings=bks;return{ok:true};}
-    case 'updateBooking':{const bks=DEMO.bookings;const i=bks.findIndex(b=>b.id===data.bookingId);if(i<0)return{ok:false,error:'Not found'};if(data.remark!==undefined)bks[i].remark=data.remark;if(data.pos!==undefined)bks[i].pos=data.pos;DEMO.bookings=bks;return{ok:true};}
+    case 'updateBooking':{
+      const bks=DEMO.bookings;const i=bks.findIndex(b=>b.id===data.bookingId);
+      if(i<0)return{ok:false,error:'Not found'};
+      if(data.remark!==undefined)bks[i].remark=data.remark;
+      if(data.pos!==undefined)bks[i].pos=data.pos;
+      DEMO.bookings=bks;return{ok:true};
+    }
     case 'getUsers':return{ok:true,data:DEMO.users.map(u=>({...u,password:undefined}))};
     case 'createUser':{const us=DEMO.users;if(us.find(u=>u.email===data.email))return{ok:false,error:'Email exists'};us.push({...data});DEMO.users=us;return{ok:true};}
     case 'deleteUser':{const us=DEMO.users.filter(u=>u.email!==data.email);DEMO.users=us;return{ok:true};}
@@ -959,12 +965,16 @@ function safeTime(val){
 }
 
 function safeStatus(val){
-  if(!val||val===''||val==='undefined') return 'confirmed';
+  if(!val||val===''||val==='undefined'||val===null) return 'confirmed';
   const s=String(val).trim().toLowerCase();
-  if(s==='confirmed'||s==='cancelled'||s==='pending') return s;
-  // If it looks like a date (Excel artifact in status column), return confirmed
-  if(s.includes('1899')||s.includes('dec')||s.includes('jan')||s.includes('/')) return 'confirmed';
-  return s||'confirmed';
+  if(s==='confirmed') return 'confirmed';
+  if(s==='cancelled') return 'cancelled';
+  if(s==='pending') return 'pending';
+  // Excel/date artifact in status column → treat as confirmed
+  if(s.includes('1899')||s.includes('dec')||s.includes('jan')||
+     s.includes('feb')||s.includes('mar')||s.includes('gmt')||
+     s.includes('/')||s.includes(':')) return 'confirmed';
+  return 'confirmed'; // default to confirmed for any unrecognized value
 }
 function fmtDate(d){return d instanceof Date?d.toISOString().slice(0,10):d;}
 function fmtDateDisp(d){return new Date(fmtDate(d)+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'});}
@@ -1074,6 +1084,9 @@ async function initApp(){
   if(DEMO_MODE){document.getElementById('demo-note').style.display='';document.getElementById('api-note').style.display='none';}
   else{document.getElementById('demo-note').style.display='none';document.getElementById('api-note').style.display='';}
   await checkApiStatus();
+  // Pre-fetch bookings so grid shows immediately on login
+  const bkInit = await api('getBookings', {});
+  if (bkInit.ok) S.liveBookings = bkInit.data;
   navTo('booking');
 }
 
@@ -1105,7 +1118,7 @@ function navTo(p){
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.toggle('on',b.dataset.p===p));
   document.getElementById(`pg-${p}`).classList.add('on');
-  if(p==='booking'){S.liveBookings=null;resetToWHStep();}
+  if(p==='booking'){resetToWHStep();} // keep liveBookings cache — re-fetched on WH select
   if(p==='mybookings') loadMyBookings();
   if(p==='allbookings') loadAllBookings();
   if(p==='vendors') loadVendors();
@@ -1288,7 +1301,10 @@ function renderDockGrid(){
     <div style="font-size:11px;color:var(--tx2);margin-top:4px">${pct}% occupied</div>`;
 }
 async function refreshLiveBookings(){const r=await api('getBookings',{});S.liveBookings=r.ok?r.data:DEMO.bookings;}
-function getActiveBookings(){return(S.liveBookings!==null?S.liveBookings:DEMO.bookings).filter(b=>b.status!=='cancelled');}
+function getActiveBookings(){
+  return(S.liveBookings!==null?S.liveBookings:DEMO.bookings)
+    .filter(b=>safeStatus(b.status)!=='cancelled');
+}
 async function chDate(d){S.selectedDate=new Date(S.selectedDate.getTime()+d*86400000);document.getElementById('dt-pick').value=fmtDate(S.selectedDate);await refreshLiveBookings();renderDockGrid();}
 async function dtPickChange(){const v=document.getElementById('dt-pick').value;if(v){S.selectedDate=new Date(v+'T12:00:00');await refreshLiveBookings();renderDockGrid();}}
 
@@ -1934,30 +1950,23 @@ function saveApiUrl(){const url=document.getElementById('cfg-api-url').value.tri
 // ═══════════════════════════════════════════════════
 function exportCSV(data,name){
   if(!data.length){toast('No data to export.','error');return;}
-  // 1 row per PO (matching Booking_Log format)
-  const rows=[];
-  data.forEach(b=>{
-    const pos=b.pos&&b.pos.length?b.pos:[{po:'',vendorName:'',wh:b.warehouse,lines:0}];
-    pos.forEach((p,idx)=>{
-      rows.push([
-        idx===0?b.id:'',
-        idx===0?b.createdAt:'',
-        b.vendorId,
-        `"${b.vendorName}"`,
-        b.date,b.startTime,b.endTime,b.dock,b.warehouse,
-        p.po,
-        `"${p.vendorName||b.vendorName||''}"`,
-        p.lines,
-        idx===0?b.truckQty:'',
-        idx===0?b.truckType:'',
-        idx===0?b.email:'',
-        idx===0?b.phone:'',
-        idx===0?b.status:'',
-        idx===0?`"${b.remark||''}"`:'',
-      ].join(','));
-    });
+  // 1 row per booking — POs listed as "PO1(lines) | PO2(lines)"
+  const rows=data.map(b=>{
+    const poStr=(b.pos||[]).map(p=>`${p.po}(${p.lines||1})`).join(' | ');
+    const totalLines=(b.pos||[]).reduce((s,p)=>s+(parseInt(p.lines)||1),0);
+    return [
+      b.id, b.createdAt||'', b.vendorId, `"${b.vendorName||''}"`,
+      safeDate(b.date), safeTime(b.startTime), safeTime(b.endTime),
+      b.dock||'', b.warehouse||'',
+      `"${poStr}"`, totalLines,
+      b.truckQty||1, b.truckType||'',
+      b.email||'', b.phone||'',
+      safeStatus(b.status),
+      `"${b.remark||''}"`,
+      b.bookedBy||''
+    ].join(',');
   });
-  const csv=['Booking ID,Created,Vendor ID,Vendor Name,Date,Start,End,Dock,Warehouse,Purchase Order,PO Vendor Name,PO Lines,Truck Qty,Truck Type,Email,Phone,Status,Remark',...rows].join('\n');
+  const csv=['Booking ID,Created,Vendor ID,Vendor Name,Book Date,Start,End,Dock,Warehouse,PO List,Total Lines,Truck Qty,Truck Type,Email,Phone,Status,Remark,Booked By',...rows].join('\n');
   dlFile(csv,'text/csv',`${name}_${fmtDate(new Date())}.csv`);
 }
 function exportDisplay(){
