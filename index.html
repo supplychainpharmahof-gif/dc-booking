@@ -1163,15 +1163,23 @@ function renderDockGrid(){
     const [st,et]=[twObj.s||twObj[0],twObj.e||twObj[1]];
     const twDays=twObj.days||[1,2,3,4,5];
     // Check if this slot applies to any of the dates we're showing
-    const anyDate=dates.some(dt=>twDays.includes(new Date(fmtDate(dt)+'T12:00:00').getDay()));
-    if(!anyDate)return; // skip slot if not available any shown day
+    // Show all slots — grey out cells where this slot isn't active for that day
+    // (never skip a row entirely — always show all configured time slots)
+    const anyDate=twDays.length===0?false:dates.some(dt=>twDays.includes(new Date(fmtDate(dt)+'T12:00:00').getDay()));
+    if(!anyDate&&twDays.length>0&&S.viewDays===1){
+      // In 1-day view: skip slots not active today
+      html+=`<tr><td class="tc" style="opacity:.4">${st}</td>`;
+      docks.forEach(()=>{html+=`<td><div class="dc past" style="opacity:.4">–</div></td>`;});
+      html+='</tr>';
+      return;
+    }
     html+=`<tr><td class="tc">${st}</td>`;
     dates.forEach(dt=>{
       const dateStr=fmtDate(dt);const hol=cfg.holidays.find(h=>h.date===dateStr);
       const dtDayNum=new Date(dateStr+'T12:00:00').getDay();
-      const slotActiveToday=twDays.includes(dtDayNum);
+      const slotActiveToday=twDays.length>0?twDays.includes(dtDayNum):false;
       docks.forEach(d=>{
-        if(!slotActiveToday){html+=`<td><div class="dc closed" style="background:var(--sur2);color:var(--tx3);cursor:default;font-size:11px">–</div></td>`;return;}
+        if(!slotActiveToday){html+=`<td><div class="dc past" style="opacity:.35" title="Not scheduled this day">–</div></td>`;return;}
         totalSlots++;
         const bk=getActiveBookings().find(b=>b.date===dateStr&&b.warehouse===wh.id&&b.dock===d&&b.startTime===st);
         const past=isPast(dateStr,st);
@@ -1742,7 +1750,8 @@ function renderConfig(){
   if(twBody){twBody.innerHTML=(cfg.timeWindows||[]).map((tw,i)=>{
     const twObj=typeof tw==='object'&&!Array.isArray(tw)?tw:{s:tw[0],e:tw[1],days:[1,2,3,4,5]};
     const dayCells=DAYNUM.map((d,di)=>`<td style="border:1px solid var(--bdr);text-align:center"><input type="checkbox" ${(twObj.days||[1,2,3,4,5]).includes(d)?'checked':''} onchange="updateTWDay(${i},${d},this.checked)"></td>`).join('');
-    return`<tr><td style="border:1px solid var(--bdr);padding:6px 10px;font-weight:600">${twObj.s}–${twObj.e}</td>${dayCells}<td style="border:1px solid var(--bdr);text-align:center"><button class="tag-rm" onclick="removeTW(${i})">×</button></td></tr>`;
+    const noDays=(twObj.days||[]).length===0;
+    return`<tr style="${noDays?'background:#fff5f5':''}" title="${noDays?'⚠️ No days selected — slot will not appear in grid':''}"><td style="border:1px solid var(--bdr);padding:6px 10px;font-weight:600">${twObj.s}–${twObj.e}${noDays?'<span style="color:var(--red);font-size:10px;margin-left:4px">⚠️ no days</span>':''}</td>${dayCells}<td style="border:1px solid var(--bdr);text-align:center"><button class="tag-rm" onclick="removeTW(${i})">×</button></td></tr>`;
   }).join('');}
   document.getElementById('tt-list').innerHTML=(cfg.truckTypes||[]).map((t,i)=>`<div class="tag">${t} <button class="tag-rm" onclick="removeTT(${i})">×</button></div>`).join('');
   document.getElementById('hol-list').innerHTML=(cfg.holidays||[]).map((h,i)=>`<div class="tag">🎌 ${h.date} ${h.name} <button class="tag-rm" onclick="removeHol(${i})">×</button></div>`).join('');
@@ -1793,7 +1802,11 @@ function updateTWDay(twIdx,day,checked){
   if(checked){if(!twObj.days.includes(day))twObj.days.push(day);}
   else{twObj.days=twObj.days.filter(d=>d!==day);}
   S.cfg.timeWindows[twIdx]=twObj;
-  // Don't re-render full config — just save state silently
+  // Auto-save config silently when day checkbox changes
+  api('saveConfig',{config:S.cfg}).then(r=>{
+    if(r.ok) toast('Time slot updated ✓','success');
+    else toast('Save failed — click Save All Config','error');
+  });
 }
 function removeTW(i){
   if(!confirm('Remove this time slot? Existing bookings on this slot will NOT be affected.'))return;
