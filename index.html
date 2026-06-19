@@ -1001,7 +1001,7 @@ async function populateSuVendors(){
   const vendors=(r.ok&&r.data&&r.data.length>0)?r.data:VENDORS_MASTER;
   if(r.ok&&r.data) S.vendorList=r.data;
   sel.innerHTML='<option value="">— select vendor ID —</option>';
-  vendors.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(v=>{
+  vendors.sort((a,b)=>(a.id||a.vendorId||'').localeCompare(b.id||b.vendorId||'')).forEach(v=>{
     const id=v.id||'';const name=v.name||'';
     const o=document.createElement('option');o.value=id;o.textContent=`${id} — ${name.slice(0,55)}`;sel.appendChild(o);
   });
@@ -1094,7 +1094,7 @@ function populateSupVendorDropdown(vendors){
   const sel=document.getElementById('sup-vendor-sel');
   const prev=sel.value;
   sel.innerHTML='<option value="">Book as: Own Account</option>';
-  [...vendors].sort((a,b)=>(a.name||'').localeCompare(b.name||'')).forEach(v=>{
+  [...vendors].sort((a,b)=>(a.id||a.vendorId||'').localeCompare(b.id||b.vendorId||'')).forEach(v=>{
     const id=v.id||v.vendorId||'';const name=v.name||v.vendorName||'';
     if(!id) return;
     const o=document.createElement('option');o.value=id;o.textContent=`${id} — ${name.slice(0,45)}`;sel.appendChild(o);
