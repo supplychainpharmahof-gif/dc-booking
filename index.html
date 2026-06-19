@@ -280,6 +280,7 @@ table.dt{width:100%;border-collapse:collapse}
     <div class="tab-row">
       <button class="tab-btn on" onclick="authTab('login')">Sign In</button>
       <button class="tab-btn" onclick="authTab('signup')">Vendor Sign Up</button>
+      <button class="tab-btn" onclick="authTab('forgot')" id="tab-forgot" style="display:none">Reset Password</button>
     </div>
     <div id="f-login">
       <div class="fg"><label>Email</label><input id="li-email" type="email" placeholder="your@email.com"></div>
@@ -292,7 +293,25 @@ table.dt{width:100%;border-collapse:collapse}
         <div>✅ <strong>Connected to Google Sheets</strong></div>
       </div>
       <button class="btn btn-primary btn-full" id="li-btn" onclick="doLogin()">Sign In →</button>
+      <div style="text-align:center;margin-top:12px">
+        <button onclick="authTab('forgot')" style="background:none;border:none;color:var(--acc);font-size:13px;cursor:pointer;text-decoration:underline">Forgot password?</button>
+      </div>
     </div>
+    <!-- FORGOT PASSWORD -->
+    <div id="f-forgot" style="display:none">
+      <div class="alert a-info" style="font-size:13px;margin-bottom:14px">
+        Enter your registered email. We'll send a temporary password you can use to sign in.
+      </div>
+      <div class="fg"><label>Email Address</label>
+        <input id="fp-email" type="email" placeholder="your@email.com">
+      </div>
+      <div id="fp-msg" style="display:none;font-size:13px;padding:10px 12px;border-radius:6px;margin-bottom:12px"></div>
+      <button class="btn btn-primary btn-full" id="fp-btn" onclick="doForgotPassword()">Send Temporary Password →</button>
+      <div style="text-align:center;margin-top:12px">
+        <button onclick="authTab('login')" style="background:none;border:none;color:var(--tx2);font-size:13px;cursor:pointer">← Back to Sign In</button>
+      </div>
+    </div>
+
     <div id="f-signup" style="display:none">
       <div class="fg"><label>Vendor ID <span class="req">*</span></label>
         <select id="su-vid" onchange="onVendorSelect()"><option value="">— loading... —</option></select>
@@ -624,6 +643,26 @@ table.dt{width:100%;border-collapse:collapse}
       </div>
     </div>
   </main>
+</div>
+
+<!-- ── MODAL: CHANGE PASSWORD ──────────────────────────────── -->
+<div class="ov" id="ov-change-pw">
+  <div class="modal modal-sm">
+    <div class="mh"><div class="mt">🔑 Change Password Required</div></div>
+    <div class="alert a-warn" style="margin-bottom:16px">
+      You signed in with a temporary password. Please set a new password to continue.
+    </div>
+    <div class="fg"><label>New Password <span class="req">*</span></label>
+      <input type="password" id="cp-new" placeholder="Min 6 characters">
+    </div>
+    <div class="fg"><label>Confirm New Password <span class="req">*</span></label>
+      <input type="password" id="cp-confirm" placeholder="Repeat new password">
+    </div>
+    <div id="cp-err" class="alert a-error" style="display:none"></div>
+    <div class="mf" style="justify-content:center">
+      <button class="btn btn-primary" onclick="submitChangePw()">Set New Password</button>
+    </div>
+  </div>
 </div>
 
 <!-- ── MODAL: BOOKING ────────────────────────────────────── -->
@@ -992,6 +1031,14 @@ function authTab(t){
   document.querySelectorAll('.tab-btn').forEach((b,i)=>b.classList.toggle('on',(i===0&&t==='login')||(i===1&&t==='signup')));
   document.getElementById('f-login').style.display=t==='login'?'':'none';
   document.getElementById('f-signup').style.display=t==='signup'?'':'none';
+  document.getElementById('f-forgot').style.display=t==='forgot'?'':'none';
+  // Show/hide forgot tab button
+  document.getElementById('tab-forgot').style.display=t==='forgot'?'':'none';
+  if(t==='forgot'){
+    document.getElementById('fp-msg').style.display='none';
+    document.getElementById('fp-email').value='';
+    document.getElementById('tab-forgot').style.display='';
+  }
   if(t==='signup') populateSuVendors();
 }
 async function populateSuVendors(){
@@ -1011,6 +1058,39 @@ function onVendorSelect(){
   const v=(S.vendorList.length?S.vendorList:VENDORS_MASTER).find(x=>x.id===id);
   document.getElementById('su-vname').textContent=v?v.name:'';
 }
+// ── FORGOT PASSWORD ──────────────────────────────────────────
+async function doForgotPassword(){
+  const email=document.getElementById('fp-email').value.trim();
+  const msgEl=document.getElementById('fp-msg');
+  const btn=document.getElementById('fp-btn');
+  if(!email){msgEl.style.display='';msgEl.className='alert a-error';msgEl.textContent='Please enter your email address.';return;}
+  btn.disabled=true;btn.textContent='⏳ Sending...';
+  const r=await api('forgotPassword',{email});
+  btn.disabled=false;btn.textContent='Send Temporary Password →';
+  if(r.ok){
+    msgEl.style.display='';msgEl.className='alert a-success';
+    msgEl.textContent='✅ A temporary password has been sent to '+email+'. Check your inbox and sign in.';
+  } else {
+    msgEl.style.display='';msgEl.className='alert a-error';
+    msgEl.textContent=r.error||'Failed to send reset email.';
+  }
+}
+
+// ── CHANGE PASSWORD (after temp login) ───────────────────────────────────────
+async function submitChangePw(){
+  const np=document.getElementById('cp-new').value;
+  const cp=document.getElementById('cp-confirm').value;
+  const err=document.getElementById('cp-err');
+  if(!np||np.length<6){err.style.display='';err.textContent='Password must be at least 6 characters.';return;}
+  if(np!==cp){err.style.display='';err.textContent='Passwords do not match.';return;}
+  err.style.display='none';
+  const r=await api('changePassword',{email:S.user.email,password:np});
+  if(!r.ok){err.style.display='';err.textContent=r.error||'Failed to change password.';return;}
+  closeOv('ov-change-pw');
+  S.user.mustChangePassword=false;
+  toast('Password changed successfully!','success');
+}
+
 async function doLogin(){
   const email=document.getElementById('li-email').value.trim(),pw=document.getElementById('li-pw').value;
   document.getElementById('li-btn').disabled=true;
@@ -1019,6 +1099,11 @@ async function doLogin(){
   if(!r.ok){const e=document.getElementById('li-err');e.style.display='';e.textContent=r.error;return;}
   document.getElementById('li-err').style.display='none';
   S.user=r.user; await loadConfig(); initApp();
+  // Show change password modal if user signed in with temp password
+  if(r.mustChangePassword){
+    S.user.mustChangePassword=true;
+    setTimeout(()=>openOv('ov-change-pw'),800);
+  }
 }
 async function doSignup(){
   const vid=document.getElementById('su-vid').value,email=document.getElementById('su-email').value.trim(),pw=document.getElementById('su-pw').value,phone=document.getElementById('su-phone').value.trim();
